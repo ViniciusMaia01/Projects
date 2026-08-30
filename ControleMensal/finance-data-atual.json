@@ -1,0 +1,115 @@
+{
+  "2026-08": {
+    "income": 5500,
+    "expenses": [
+      {
+        "id": "1",
+        "desc": "Das (MEI)",
+        "value": 86.05,
+        "category": "impostos",
+        "dueDate": "2026-08-20",
+        "paid": true,
+        "paidDate": "2026-08-05"
+      },
+      {
+        "id": "2",
+        "desc": "Oliveira",
+        "value": 656,
+        "category": "pessoal",
+        "dueDate": "2026-08-10",
+        "paid": true,
+        "paidDate": "2026-08-08"
+      },
+      {
+        "id": "3",
+        "desc": "Aluguel",
+        "value": 1500,
+        "category": "moradia",
+        "dueDate": "2026-08-05",
+        "paid": true,
+        "paidDate": "2026-08-05"
+      },
+      {
+        "id": "4",
+        "desc": "Variáveis",
+        "value": 300,
+        "category": "variaveis",
+        "dueDate": "2026-08-25",
+        "paid": true,
+        "paidDate": "2026-08-07"
+      },
+      {
+        "id": "5",
+        "desc": "Internet",
+        "value": 129.8,
+        "category": "servicos",
+        "dueDate": "2026-08-15",
+        "paid": true,
+        "paidDate": "2026-08-12"
+      },
+      {
+        "id": "6",
+        "desc": "Netflix",
+        "value": 44.9,
+        "category": "streaming",
+        "dueDate": "2026-08-12",
+        "paid": true,
+        "paidDate": "2026-08-12"
+      },
+      {
+        "id": "7",
+        "desc": "Spotify",
+        "value": 40.9,
+        "category": "streaming",
+        "dueDate": "2026-08-12",
+        "paid": true,
+        "paidDate": "2026-08-12"
+      },
+      {
+        "id": "8",
+        "desc": "YouTube Premium",
+        "value": 16.9,
+        "category": "streaming",
+        "dueDate": "2026-08-12",
+        "paid": true,
+        "paidDate": "2026-08-12"
+      },
+      {
+        "id": "9",
+        "desc": "Bradesco - Fatura",
+        "value": 1587.01,
+        "category": "cartao",
+        "dueDate": "2026-08-18",
+        "paid": true,
+        "paidDate": "2026-08-17"
+      },
+      {
+        "id": "10",
+        "desc": "Nubank - Fatura",
+        "value": 272.5,
+        "category": "cartao",
+        "dueDate": "2026-08-20",
+        "paid": true,
+        "paidDate": "2026-08-19"
+      },
+      {
+        "id": "11",
+        "desc": "Empréstimo Nu",
+        "value": 641.05,
+        "category": "emprestimo",
+        "dueDate": "2026-08-22",
+        "paid": true,
+        "paidDate": "2026-08-21"
+      },
+      {
+        "id": "12",
+        "desc": "Gasolina",
+        "value": 480,
+        "category": "transporte",
+        "dueDate": "2026-08-30",
+        "paid": true,
+        "paidDate": "2026-08-28"
+      }
+    ]
+  }
+}
