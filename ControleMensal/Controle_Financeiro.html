@@ -3,568 +3,414 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Controle Financeiro — Vinícius</title>
-    <script src="https://cdn.tailwindcss.com"></script>
-    <script>
-        tailwind.config = {
-            theme: {
-                extend: {
-                    colors: {
-                        surface: { DEFAULT: '#111827', light: '#1f2937', lighter: '#374151' },
-                        accent: { blue: '#3b82f6', green: '#10b981', yellow: '#f59e0b', red: '#ef4444', purple: '#8b5cf6' }
-                    }
-                }
-            }
-        }
-    </script>
+    <title>Controle mensal</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@500&display=swap" rel="stylesheet">
     <style>
-        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
-        body { font-family: 'Inter', sans-serif; }
-        input[type="month"]::-webkit-calendar-picker-indicator { filter: invert(0.8); cursor: pointer; }
-        .card-glow-green { box-shadow: 0 0 30px rgba(16,185,129,0.08); }
-        .card-glow-yellow { box-shadow: 0 0 30px rgba(245,158,11,0.08); }
-        .card-glow-red { box-shadow: 0 0 30px rgba(239,68,68,0.08); }
-        .card-glow-blue { box-shadow: 0 0 30px rgba(59,130,246,0.08); }
-        .progress-bar { transition: width 0.6s cubic-bezier(0.4,0,0.2,1); }
-        .modal-backdrop { backdrop-filter: blur(4px); }
-        ::-webkit-scrollbar { width: 6px; height: 6px; }
-        ::-webkit-scrollbar-track { background: #1f2937; }
-        ::-webkit-scrollbar-thumb { background: #4b5563; border-radius: 3px; }
+        :root {
+            --bg: #0b0f14; --elev: #12181f; --soft: #1a222c; --line: #2a3440;
+            --text: #e8eef4; --muted: #8b9aab; --faint: #6b7a8a;
+            --accent: #3dd6c6; --blue: #7db0ff; --orange: #f0a14a;
+            --green: #4ade80; --red: #f87171; --yellow: #fbbf24;
+        }
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        html, body { min-height: 100%; color-scheme: dark; }
+        body { font-family: "IBM Plex Sans", system-ui, sans-serif; background: var(--bg); color: var(--text); }
+        button, input, select { font-family: inherit; color-scheme: dark; }
+        .app { display: grid; grid-template-columns: 220px 1fr; min-height: 100vh; }
+        .sidebar { border-right: 1px solid var(--line); background: #0e141b; padding: 22px 14px; display: flex; flex-direction: column; }
+        .brand { font-weight: 700; padding: 0 10px 22px; }
+        .brand small { display: block; color: var(--faint); font-weight: 400; margin-top: 4px; }
+        .nav button { width: 100%; text-align: left; border: 0; background: transparent; color: var(--muted); padding: 11px 12px; border-radius: 10px; cursor: pointer; margin-bottom: 4px; font-size: 14px; }
+        .nav button.active { background: var(--soft); color: var(--text); }
+        .status { margin-top: auto; font-size: 12px; color: var(--muted); display: flex; gap: 8px; align-items: center; padding: 10px; }
+        .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--faint); }
+        .dot.ok { background: var(--green); } .dot.err { background: var(--red); } .dot.load { background: var(--yellow); }
+        .main { padding: 24px 28px 48px; max-width: 980px; }
+        .top { display: flex; justify-content: space-between; gap: 16px; flex-wrap: wrap; align-items: end; margin-bottom: 18px; }
+        .top h2 { font-size: 26px; }
+        .top p { color: var(--muted); margin-top: 6px; font-size: 14px; }
+        .filters { display: flex; gap: 10px; flex-wrap: wrap; align-items: end; }
+        .field { display: flex; flex-direction: column; gap: 6px; min-width: 160px; }
+        .field span { font-size: 11px; color: var(--faint); text-transform: uppercase; letter-spacing: .07em; }
+        select, input[type="number"], .cell {
+            background: var(--soft); color: var(--text); border: 1px solid var(--line);
+            border-radius: 10px; padding: 10px 12px; width: 100%; outline: none;
+        }
+        input[type="number"], .cell { font-family: "IBM Plex Mono", monospace; text-align: right; }
+        select:focus, input:focus { border-color: var(--accent); }
+        .kpis { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 18px; }
+        .kpi { background: var(--elev); border: 1px solid var(--line); border-radius: 14px; padding: 16px; }
+        .kpi label { font-size: 11px; color: var(--faint); text-transform: uppercase; letter-spacing: .06em; }
+        .kpi strong { display: block; margin-top: 8px; font-family: "IBM Plex Mono", monospace; font-size: 20px; font-weight: 500; }
+        .pos { color: var(--green); } .neg { color: var(--red); } .warn { color: var(--yellow); }
+        .card { background: var(--elev); border: 1px solid var(--line); border-radius: 16px; margin-bottom: 14px; overflow: hidden; }
+        .card.cat { border-left: 4px solid var(--cat, var(--accent)); }
+        .card.cat .card-head { background: var(--cat-bg, #1a222c); }
+        .card.cat .card-head h3, .card.cat .card-head .meta { color: var(--cat, var(--accent)); }
+        .card.cat-pessoas { --cat: #c084fc; --cat-bg: rgba(192,132,252,.14); }
+        .card.cat-cartoes { --cat: #f87171; --cat-bg: rgba(248,113,113,.14); }
+        .card.cat-assinaturas { --cat: #f472b6; --cat-bg: rgba(244,114,182,.14); }
+        .card.cat-variaveis { --cat: #fbbf24; --cat-bg: rgba(251,191,36,.14); }
+        .card.cat-investimentos { --cat: #34d399; --cat-bg: rgba(52,211,153,.14); }
+        .card.cat-outros { --cat: #38bdf8; --cat-bg: rgba(56,189,248,.14); }
+        .card.cat-emp1 { --cat: #fb923c; --cat-bg: rgba(251,146,60,.14); }
+        .card.cat-emp2 { --cat: #22d3ee; --cat-bg: rgba(34,211,238,.14); }
+        .card-head { padding: 14px 18px; border-bottom: 1px solid var(--line); display: flex; justify-content: space-between; align-items: center; }
+        .card-head h3 { font-size: 14px; font-weight: 600; }
+        .card-body { padding: 8px 18px 16px; }
+        .row { display: grid; grid-template-columns: 1fr 160px; gap: 12px; align-items: center; padding: 10px 0; border-bottom: 1px solid #1e2731; }
+        .row:last-child { border-bottom: 0; }
+        .row label { color: var(--text); font-size: 14px; }
+        .row .meta { color: var(--faint); font-size: 11px; margin-top: 2px; }
+        .cats { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+        .btn { border: 0; border-radius: 10px; padding: 10px 16px; cursor: pointer; font-weight: 600; font-size: 13px; background: linear-gradient(135deg, #2dd4bf, #22a6c7); color: #042023; }
+        .btn.ghost { background: transparent; color: var(--muted); border: 1px solid var(--line); }
+        .totals { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; padding: 16px 18px; background: #10161c; }
+        .totals div { color: var(--muted); font-size: 12px; }
+        .totals strong { display: block; margin-top: 4px; font-family: "IBM Plex Mono", monospace; font-size: 16px; color: var(--text); }
+        .hidden { display: none !important; }
+        .banner { display: none; margin-bottom: 12px; padding: 10px 12px; border-radius: 10px; background: rgba(248,113,113,.1); color: #fecaca; }
+        .banner.show { display: block; }
+        .evo { overflow: auto; max-height: 420px; }
+        table { width: 100%; border-collapse: collapse; font-size: 13px; }
+        th, td { padding: 10px 12px; text-align: left; border-bottom: 1px solid var(--line); }
+        th { color: var(--faint); font-size: 11px; text-transform: uppercase; }
+        td.num { text-align: right; font-family: "IBM Plex Mono", monospace; }
+        table input { width: 110px; padding: 7px 8px; }
+        @media (max-width: 900px) {
+            .app { grid-template-columns: 1fr; }
+            .kpis, .cats, .totals { grid-template-columns: 1fr; }
+        }
     </style>
 </head>
-<body class="bg-gray-950 text-gray-100 min-h-screen">
-
-    <!-- Header -->
-    <header class="border-b border-gray-800 bg-gray-950/80 sticky top-0 z-40 backdrop-blur-md">
-        <div class="max-w-6xl mx-auto px-4 py-4 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
-            <div>
-                <h1 class="text-2xl font-bold tracking-tight">
-                    <span class="text-blue-400">●</span> Controle Financeiro
-                </h1>
-                <p class="text-gray-500 text-sm mt-0.5" id="monthLabel">—</p>
-            </div>
-            <div class="flex flex-wrap items-center gap-3">
-                <span id="saveStatus" class="text-xs text-gray-500 flex items-center gap-1.5">
-                    <span id="saveDot" class="w-2 h-2 rounded-full bg-gray-600"></span>
-                    <span id="saveText">Carregando...</span>
-                </span>
-                <input type="month" id="monthSelector"
-                    class="bg-surface-light border border-gray-700 rounded-lg px-3 py-2 text-sm text-gray-200 focus:outline-none focus:ring-2 focus:ring-blue-500">
-                <button onclick="restoreBackup()" title="Voltar ao backup original"
-                    class="px-3 py-2 text-sm bg-surface-light border border-gray-700 rounded-lg hover:border-yellow-500 hover:text-yellow-400 transition">
-                    ↺ Restaurar backup
-                </button>
-            </div>
-        </div>
-    </header>
-
-    <main class="max-w-6xl mx-auto px-4 py-6 space-y-6">
-
-        <!-- KPI Cards -->
-        <div class="grid grid-cols-2 lg:grid-cols-4 gap-4">
-            <div class="bg-surface border border-gray-800 rounded-2xl p-5 card-glow-blue">
-                <div class="flex justify-between items-start">
-                    <p class="text-xs font-semibold uppercase tracking-wider text-gray-500">Receita</p>
-                    <button onclick="editIncome()" class="text-gray-600 hover:text-blue-400 transition text-sm" title="Editar">✎</button>
-                </div>
-                <p class="text-2xl font-bold text-blue-400 mt-2" id="totalIncome">R$ 0,00</p>
-                <p class="text-xs text-gray-600 mt-1">Salário do mês</p>
-            </div>
-            <div class="bg-surface border border-gray-800 rounded-2xl p-5">
-                <p class="text-xs font-semibold uppercase tracking-wider text-gray-500">Total Despesas</p>
-                <p class="text-2xl font-bold text-gray-200 mt-2" id="totalExpenses">R$ 0,00</p>
-                <p class="text-xs text-gray-600 mt-1"><span id="expenseCount">0</span> itens</p>
-            </div>
-            <div class="bg-surface border border-gray-800 rounded-2xl p-5 card-glow-yellow" id="pendingCard">
-                <p class="text-xs font-semibold uppercase tracking-wider text-gray-500">Falta Pagar</p>
-                <p class="text-2xl font-bold mt-2" id="totalPending">R$ 0,00</p>
-                <p class="text-xs text-gray-600 mt-1"><span id="pendingCount">0</span> pendente(s)</p>
-            </div>
-            <div class="bg-surface border border-gray-800 rounded-2xl p-5" id="balanceCard">
-                <p class="text-xs font-semibold uppercase tracking-wider text-gray-500">Sobra</p>
-                <p class="text-2xl font-bold mt-2" id="totalBalance">R$ 0,00</p>
-                <p class="text-xs text-gray-600 mt-1">Receita − despesas</p>
-            </div>
-        </div>
-
-        <!-- Progress + Category Chart -->
-        <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
-            <!-- Progress -->
-            <div class="bg-surface border border-gray-800 rounded-2xl p-6">
-                <div class="flex justify-between items-center mb-4">
-                    <h2 class="font-semibold text-gray-300">Progresso de Pagamento</h2>
-                    <span class="text-sm font-bold text-green-400" id="paidPercent">0%</span>
-                </div>
-                <div class="h-4 bg-gray-800 rounded-full overflow-hidden mb-3">
-                    <div id="paidBar" class="progress-bar h-full bg-gradient-to-r from-green-600 to-green-400 rounded-full" style="width:0%"></div>
-                </div>
-                <div class="flex justify-between text-sm">
-                    <span class="text-green-400">Pago: <strong id="totalPaid">R$ 0,00</strong></span>
-                    <span class="text-yellow-400">Pendente: <strong id="totalPendingBar">R$ 0,00</strong></span>
-                </div>
-            </div>
-
-            <!-- Category breakdown -->
-            <div class="bg-surface border border-gray-800 rounded-2xl p-6">
-                <h2 class="font-semibold text-gray-300 mb-4">Por Categoria</h2>
-                <div id="categoryChart" class="space-y-3 max-h-48 overflow-y-auto">
-                    <p class="text-gray-600 text-sm">Nenhuma despesa ainda.</p>
-                </div>
-            </div>
-        </div>
-
-        <!-- Add Expense -->
-        <div class="bg-surface border border-gray-800 rounded-2xl p-6">
-            <h2 class="font-semibold text-gray-300 mb-4">+ Adicionar Despesa</h2>
-            <form id="addExpenseForm" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-6 gap-3">
-                <input type="text" id="descInput" placeholder="Descrição" required
-                    class="lg:col-span-2 bg-surface-light border border-gray-700 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 placeholder-gray-600">
-                <select id="categoryInput"
-                    class="bg-surface-light border border-gray-700 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
-                </select>
-                <div class="relative">
-                    <span class="absolute left-3 top-2.5 text-gray-500 text-sm">R$</span>
-                    <input type="number" id="valueInput" placeholder="0,00" step="0.01" min="0" required
-                        class="w-full bg-surface-light border border-gray-700 rounded-lg px-3 py-2.5 pl-9 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
-                </div>
-                <input type="date" id="dueDateInput" title="Vencimento"
-                    class="bg-surface-light border border-gray-700 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
-                <button type="submit"
-                    class="bg-blue-600 hover:bg-blue-500 text-white font-semibold rounded-lg px-4 py-2.5 text-sm transition">
-                    Adicionar
-                </button>
-            </form>
-        </div>
-
-        <!-- Expense List -->
-        <div class="bg-surface border border-gray-800 rounded-2xl overflow-hidden">
-            <div class="px-6 py-4 border-b border-gray-800 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2">
-                <h2 class="font-semibold text-gray-300">Despesas do Mês</h2>
-                <div class="flex gap-2 text-xs">
-                    <button onclick="setFilter('all')" id="filterAll" class="filter-btn px-3 py-1 rounded-full bg-blue-600 text-white">Todos</button>
-                    <button onclick="setFilter('pending')" id="filterPending" class="filter-btn px-3 py-1 rounded-full bg-surface-light text-gray-400 hover:text-white">Pendentes</button>
-                    <button onclick="setFilter('paid')" id="filterPaid" class="filter-btn px-3 py-1 rounded-full bg-surface-light text-gray-400 hover:text-white">Pagos</button>
-                </div>
-            </div>
-            <div class="overflow-x-auto">
-                <table class="w-full text-sm">
-                    <thead>
-                        <tr class="text-gray-500 text-xs uppercase border-b border-gray-800">
-                            <th class="p-4 w-14 text-center">Pago</th>
-                            <th class="p-4 text-left">Descrição</th>
-                            <th class="p-4 text-left hidden sm:table-cell">Categoria</th>
-                            <th class="p-4 text-left hidden md:table-cell">Vencimento</th>
-                            <th class="p-4 text-right">Valor</th>
-                            <th class="p-4 w-24 text-right">Ações</th>
-                        </tr>
-                    </thead>
-                    <tbody id="expenseList" class="divide-y divide-gray-800/60"></tbody>
-                </table>
-            </div>
-            <div id="emptyState" class="hidden p-12 text-center text-gray-600">
-                <p class="text-4xl mb-3">📭</p>
-                <p>Nenhuma despesa neste mês.</p>
-                <p class="text-xs mt-1">Use o formulário acima para adicionar.</p>
-            </div>
-        </div>
-    </main>
-
-    <!-- Edit Modal -->
-    <div id="editModal" class="hidden fixed inset-0 z-50 flex items-center justify-center p-4">
-        <div class="absolute inset-0 bg-black/60 modal-backdrop" onclick="closeEditModal()"></div>
-        <div class="relative bg-surface border border-gray-700 rounded-2xl p-6 w-full max-w-md shadow-2xl">
-            <h3 class="text-lg font-bold text-gray-200 mb-4">Editar Despesa</h3>
-            <form id="editForm" class="space-y-3">
-                <input type="hidden" id="editIndex">
+<body>
+    <div class="app">
+        <aside class="sidebar">
+            <div class="brand">Controle mensal<small>Finanças pessoais</small></div>
+            <nav class="nav">
+                <button class="active" data-view="contabilidade" onclick="setView('contabilidade')">Contabilidade geral</button>
+                <button data-view="emprestimos" onclick="setView('emprestimos')">Empréstimos</button>
+            </nav>
+            <div class="status"><span class="dot" id="dot"></span><span id="statusText">Carregando...</span></div>
+        </aside>
+        <main class="main">
+            <div class="banner" id="banner"></div>
+            <div class="top">
                 <div>
-                    <label class="text-xs text-gray-500 mb-1 block">Descrição</label>
-                    <input type="text" id="editDesc" required
-                        class="w-full bg-surface-light border border-gray-700 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+                    <h2 id="pageTitle">Contabilidade geral</h2>
+                    <p id="pageSub">Filtre o mês e a categoria. Edite os valores e salve.</p>
                 </div>
-                <div class="grid grid-cols-2 gap-3">
-                    <div>
-                        <label class="text-xs text-gray-500 mb-1 block">Valor (R$)</label>
-                        <input type="number" id="editValue" step="0.01" min="0" required
-                            class="w-full bg-surface-light border border-gray-700 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
-                    </div>
-                    <div>
-                        <label class="text-xs text-gray-500 mb-1 block">Categoria</label>
-                        <select id="editCategory"
-                            class="w-full bg-surface-light border border-gray-700 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
-                        </select>
-                    </div>
+                <div class="filters">
+                    <label class="field"><span>Mês</span><select id="filtroMes" onchange="render()"></select></label>
+                    <label class="field"><span>Categoria</span><select id="filtroCat" onchange="render()"></select></label>
+                    <button class="btn" type="button" onclick="salvarAtual()">Salvar</button>
                 </div>
-                <div class="grid grid-cols-2 gap-3">
-                    <div>
-                        <label class="text-xs text-gray-500 mb-1 block">Vencimento</label>
-                        <input type="date" id="editDueDate"
-                            class="w-full bg-surface-light border border-gray-700 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
-                    </div>
-                    <div>
-                        <label class="text-xs text-gray-500 mb-1 block">Data pagamento</label>
-                        <input type="date" id="editPaidDate"
-                            class="w-full bg-surface-light border border-gray-700 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
-                    </div>
-                </div>
-                <label class="flex items-center gap-2 text-sm text-gray-400 cursor-pointer">
-                    <input type="checkbox" id="editPaid" class="rounded border-gray-600 bg-surface-light text-green-500 focus:ring-green-500">
-                    Marcado como pago
-                </label>
-                <div class="flex gap-3 pt-2">
-                    <button type="button" onclick="closeEditModal()"
-                        class="flex-1 px-4 py-2.5 border border-gray-700 rounded-lg text-gray-400 hover:text-white transition text-sm">Cancelar</button>
-                    <button type="submit"
-                        class="flex-1 px-4 py-2.5 bg-blue-600 hover:bg-blue-500 text-white rounded-lg font-semibold transition text-sm">Salvar</button>
-                </div>
-            </form>
-        </div>
+            </div>
+            <section class="kpis" id="kpis"></section>
+            <div id="viewContabilidade"></div>
+            <div id="viewEmprestimos" class="hidden"></div>
+        </main>
     </div>
-
     <script>
-        const STORAGE_KEY = 'viniciusFinanceData';
-        const API = '/api/dados';
-        const CATEGORIES = {
-            moradia:     { label: 'Moradia',     color: '#8b5cf6' },
-            cartao:      { label: 'Cartão',      color: '#ef4444' },
-            emprestimo:  { label: 'Empréstimo',  color: '#f97316' },
-            impostos:    { label: 'Impostos',    color: '#6b7280' },
-            servicos:    { label: 'Serviços',    color: '#3b82f6' },
-            streaming:   { label: 'Streaming',   color: '#ec4899' },
-            transporte:  { label: 'Transporte',  color: '#14b8a6' },
-            pessoal:     { label: 'Pessoal',     color: '#a855f7' },
-            variaveis:   { label: 'Variáveis',   color: '#eab308' },
-            investimento:{ label: 'Investimento',color: '#10b981' },
-            outros:      { label: 'Outros',      color: '#64748b' }
+        const MONTHS = ['Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'];
+        const CATEGORIAS = [
+            { id: 'pessoas', label: 'Pessoas', cor: '#c084fc' },
+            { id: 'cartoes', label: 'Cartões', cor: '#f87171' },
+            { id: 'assinaturas', label: 'Assinaturas', cor: '#f472b6' },
+            { id: 'variaveis', label: 'Variáveis', cor: '#fbbf24' },
+            { id: 'investimentos', label: 'Investimentos', cor: '#34d399' },
+            { id: 'outros', label: 'Outros', cor: '#38bdf8' }
+        ];
+        const CAMPOS = [
+            { id: 'das', label: 'Das', categoria: 'outros', no_total: false },
+            { id: 'maximo', label: 'Max', categoria: 'pessoas', no_total: false },
+            { id: 'oliveira', label: 'Oliveira', categoria: 'pessoas', no_total: false },
+            { id: 'gabriel', label: 'Gabriel', categoria: 'pessoas', no_total: false },
+            { id: 'aluguel', label: 'Aluguel', categoria: 'outros', no_total: false },
+            { id: 'variaveis', label: 'Variáveis', categoria: 'variaveis', no_total: false },
+            { id: 'internet', label: 'Internet', categoria: 'assinaturas', no_total: false },
+            { id: 'netflix', label: 'Netflix', categoria: 'assinaturas', no_total: true },
+            { id: 'spotify', label: 'Spotify', categoria: 'assinaturas', no_total: true },
+            { id: 'youtube', label: 'YouTube', categoria: 'assinaturas', no_total: true },
+            { id: 'bradesco', label: 'Bradesco - Fatura', categoria: 'cartoes', no_total: false },
+            { id: 'mercado_pago', label: 'Mercado Pago', categoria: 'cartoes', no_total: false },
+            { id: 'nubank', label: 'Nubank - Fatura', categoria: 'cartoes', no_total: false },
+            { id: 'emprestimo_nu', label: 'Empréstimo Nu', categoria: 'outros', no_total: false },
+            { id: 'gasolina', label: 'Gasolina', categoria: 'variaveis', no_total: true },
+            { id: 'investimento', label: 'Investimento', categoria: 'investimentos', no_total: true }
+        ];
+        let dados = { contabilidade: [], emprestimos: [] };
+        let view = 'contabilidade';
+        const money = n => Number(n || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+        const mesFull = ym => { const [y,m] = (ym||'').split('-'); return `${MONTHS[Number(m)-1] || ''} de ${y}`; };
+        const num = n => { const v = parseFloat(String(n).replace(',', '.')); return Number.isFinite(v) ? Math.round(v * 100) / 100 : 0; };
+        const round2 = n => Math.round(Number(n || 0) * 100) / 100;
+        const show = n => {
+            if (n === null || n === undefined || n === '') return '';
+            const v = Number(n);
+            return Number.isFinite(v) ? String(v) : '';
         };
+        const catOf = id => CATEGORIAS.find(c => c.id === id) || { label: id, cor: '#7dd3fc' };
 
-        let financeData = {};
-        let currentFilter = 'all';
-        let serverOnline = false;
-        let saveTimer = null;
-        const monthSelector = document.getElementById('monthSelector');
-
-        const today = new Date();
-        monthSelector.value = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}`;
-
-        function initCategories() {
-            const opts = Object.entries(CATEGORIES).map(([k, v]) => `<option value="${k}">${v.label}</option>`).join('');
-            document.getElementById('categoryInput').innerHTML = opts;
-            document.getElementById('editCategory').innerHTML = opts;
+        function setStatus(kind, text) {
+            document.getElementById('dot').className = 'dot ' + kind;
+            document.getElementById('statusText').textContent = text;
+        }
+        function showBanner(t) {
+            const el = document.getElementById('banner');
+            el.textContent = t || '';
+            el.classList.toggle('show', Boolean(t));
+        }
+        async function api(path, options) {
+            const res = await fetch(path, options);
+            const data = await res.json();
+            if (!res.ok) throw new Error(data.erro || 'Falha na operação');
+            return data;
         }
 
-        function setSaveStatus(state, text) {
-            const dot = document.getElementById('saveDot');
-            const label = document.getElementById('saveText');
-            const colors = { saved: 'bg-green-500', saving: 'bg-yellow-400 animate-pulse', error: 'bg-red-500', offline: 'bg-gray-600' };
-            dot.className = `w-2 h-2 rounded-full ${colors[state] || colors.offline}`;
-            label.textContent = text;
+        function mesAtual() {
+            const sel = document.getElementById('filtroMes');
+            return sel.value || ((dados.contabilidade[0] || {}).mes);
         }
-
-        async function loadData() {
-            try {
-                const res = await fetch(API);
-                if (!res.ok) throw new Error('Servidor indisponível');
-                financeData = await res.json();
-                serverOnline = true;
-                setSaveStatus('saved', 'Salvo em finance-data-atual.json');
-            } catch {
-                serverOnline = false;
-                const stored = localStorage.getItem(STORAGE_KEY);
-                if (stored) {
-                    financeData = JSON.parse(stored);
-                    setSaveStatus('offline', 'Offline — use Iniciar.bat para salvar no PC');
-                } else {
-                    financeData = {};
-                    setSaveStatus('error', 'Execute Iniciar.bat para carregar os dados');
-                }
-            }
+        function linhaMes() {
+            const mes = mesAtual();
+            const row = (dados.contabilidade || []).find(r => r.mes === mes) || {};
+            const out = { mes, salario: row.salario || 0, valor_pago: row.valor_pago || 0 };
+            CAMPOS.forEach(c => { out[c.id] = row[c.id] != null ? row[c.id] : 0; });
+            return out;
         }
+        function idsTotal() { return CAMPOS.filter(c => !c.no_total).map(c => c.id); }
 
-        function saveData(reRender = true) {
-            localStorage.setItem(STORAGE_KEY, JSON.stringify(financeData));
-            if (reRender) render();
-
-            if (!serverOnline) return;
-
-            setSaveStatus('saving', 'Salvando...');
-            clearTimeout(saveTimer);
-            saveTimer = setTimeout(async () => {
-                try {
-                    const res = await fetch(API, {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify(financeData, null, 2)
-                    });
-                    if (!res.ok) throw new Error();
-                    setSaveStatus('saved', 'Salvo em finance-data-atual.json');
-                } catch {
-                    setSaveStatus('error', 'Erro ao salvar — verifique o servidor');
-                }
-            }, 300);
-        }
-
-        async function restoreBackup() {
-            if (!confirm('Restaurar o backup original? Suas alterações em finance-data-atual.json serão substituídas.')) return;
-            if (!serverOnline) {
-                alert('Execute Iniciar.bat para restaurar o backup.');
-                return;
-            }
-            try {
-                const res = await fetch('/api/restaurar', { method: 'POST' });
-                if (!res.ok) throw new Error();
-                const result = await res.json();
-                financeData = result.data;
-                localStorage.setItem(STORAGE_KEY, JSON.stringify(financeData));
-                setSaveStatus('saved', 'Backup restaurado em finance-data-atual.json');
-                render();
-            } catch {
-                alert('Não foi possível restaurar o backup.');
-            }
-        }
-
-        function getCurrentData() {
-            const month = monthSelector.value;
-            if (!financeData[month]) {
-                financeData[month] = { income: 5500, expenses: [] };
-            }
-            return financeData[month];
-        }
-
-        function formatCurrency(v) {
-            return v.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
-        }
-
-        function formatDate(d) {
-            if (!d) return '—';
-            const [y, m, day] = d.split('-');
-            return `${day}/${m}/${y.slice(2)}`;
-        }
-
-        function monthLabel(monthStr) {
-            const [y, m] = monthStr.split('-');
-            const names = ['Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'];
-            return `${names[parseInt(m) - 1]} de ${y}`;
-        }
-
-        function genId() {
-            return Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
-        }
-
-        function isOverdue(exp) {
-            if (exp.paid || !exp.dueDate) return false;
-            return exp.dueDate < today.toISOString().slice(0, 10);
-        }
-
-        function categoryBadge(cat) {
-            const c = CATEGORIES[cat] || CATEGORIES.outros;
-            return `<span class="inline-block px-2 py-0.5 rounded-full text-xs font-medium" style="background:${c.color}22;color:${c.color}">${c.label}</span>`;
-        }
-
-        function setFilter(f) {
-            currentFilter = f;
-            document.querySelectorAll('.filter-btn').forEach(btn => {
-                btn.className = 'filter-btn px-3 py-1 rounded-full bg-surface-light text-gray-400 hover:text-white';
-            });
-            const active = document.getElementById('filter' + f.charAt(0).toUpperCase() + f.slice(1));
-            if (active) active.className = 'filter-btn px-3 py-1 rounded-full bg-blue-600 text-white';
+        function setView(next) {
+            view = next;
+            document.querySelectorAll('.nav button').forEach(b => b.classList.toggle('active', b.dataset.view === next));
+            document.getElementById('pageTitle').textContent = next === 'contabilidade' ? 'Contabilidade geral' : 'Empréstimos';
+            document.getElementById('pageSub').textContent = next === 'contabilidade'
+                ? 'Filtre o mês e a categoria. Edite os valores e salve.'
+                : 'O valor inicial vai diminuindo a cada pagamento. Não é a soma dos meses.';
+            document.getElementById('viewContabilidade').classList.toggle('hidden', next !== 'contabilidade');
+            document.getElementById('viewEmprestimos').classList.toggle('hidden', next !== 'emprestimos');
+            preencherFiltros();
             render();
         }
 
-        function render() {
-            const data = getCurrentData();
-            const month = monthSelector.value;
-            document.getElementById('monthLabel').textContent = monthLabel(month);
-
-            let totalExp = 0, totalPending = 0, totalPaid = 0;
-            const catTotals = {};
-
-            data.expenses.forEach(exp => {
-                totalExp += exp.value;
-                if (exp.paid) totalPaid += exp.value;
-                else totalPending += exp.value;
-                const cat = exp.category || 'outros';
-                catTotals[cat] = (catTotals[cat] || 0) + exp.value;
-            });
-
-            const balance = data.income - totalExp;
-            const paidPct = totalExp > 0 ? Math.round((totalPaid / totalExp) * 100) : 0;
-
-            document.getElementById('totalIncome').textContent = formatCurrency(data.income);
-            document.getElementById('totalExpenses').textContent = formatCurrency(totalExp);
-            document.getElementById('expenseCount').textContent = data.expenses.length;
-
-            const pendingEl = document.getElementById('totalPending');
-            pendingEl.textContent = formatCurrency(totalPending);
-            pendingEl.className = `text-2xl font-bold mt-2 ${totalPending > 0 ? 'text-yellow-400' : 'text-green-400'}`;
-            document.getElementById('pendingCount').textContent = data.expenses.filter(e => !e.paid).length;
-            document.getElementById('pendingCard').className = `bg-surface border border-gray-800 rounded-2xl p-5 ${totalPending > 0 ? 'card-glow-yellow' : 'card-glow-green'}`;
-
-            const balanceEl = document.getElementById('totalBalance');
-            balanceEl.textContent = formatCurrency(balance);
-            balanceEl.className = `text-2xl font-bold mt-2 ${balance >= 0 ? 'text-green-400' : 'text-red-400'}`;
-            document.getElementById('balanceCard').className = `bg-surface border border-gray-800 rounded-2xl p-5 ${balance >= 0 ? 'card-glow-green' : 'card-glow-red'}`;
-
-            document.getElementById('paidPercent').textContent = paidPct + '%';
-            document.getElementById('paidBar').style.width = paidPct + '%';
-            document.getElementById('totalPaid').textContent = formatCurrency(totalPaid);
-            document.getElementById('totalPendingBar').textContent = formatCurrency(totalPending);
-
-            renderCategoryChart(catTotals, totalExp);
-            renderExpenseList(data);
-        }
-
-        function renderCategoryChart(catTotals, totalExp) {
-            const el = document.getElementById('categoryChart');
-            const entries = Object.entries(catTotals).sort((a, b) => b[1] - a[1]);
-            if (!entries.length) {
-                el.innerHTML = '<p class="text-gray-600 text-sm">Nenhuma despesa ainda.</p>';
-                return;
-            }
-            el.innerHTML = entries.map(([cat, val]) => {
-                const c = CATEGORIES[cat] || CATEGORIES.outros;
-                const pct = totalExp > 0 ? (val / totalExp * 100).toFixed(1) : 0;
-                return `<div>
-                    <div class="flex justify-between text-xs mb-1">
-                        <span style="color:${c.color}">${c.label}</span>
-                        <span class="text-gray-400">${formatCurrency(val)} <span class="text-gray-600">(${pct}%)</span></span>
-                    </div>
-                    <div class="h-2 bg-gray-800 rounded-full overflow-hidden">
-                        <div class="progress-bar h-full rounded-full" style="width:${pct}%;background:${c.color}"></div>
-                    </div>
-                </div>`;
-            }).join('');
-        }
-
-        function renderExpenseList(data) {
-            const listEl = document.getElementById('expenseList');
-            const emptyState = document.getElementById('emptyState');
-            listEl.innerHTML = '';
-
-            let expenses = data.expenses.map((exp, i) => ({ ...exp, originalIndex: i }));
-            if (currentFilter === 'pending') expenses = expenses.filter(e => !e.paid);
-            if (currentFilter === 'paid') expenses = expenses.filter(e => e.paid);
-
-            expenses.sort((a, b) => {
-                if (a.paid !== b.paid) return a.paid ? 1 : -1;
-                if (a.dueDate && b.dueDate) return a.dueDate.localeCompare(b.dueDate);
-                return 0;
-            });
-
-            if (!expenses.length) {
-                emptyState.classList.remove('hidden');
-                return;
-            }
-            emptyState.classList.add('hidden');
-
-            expenses.forEach(exp => {
-                const overdue = isOverdue(exp);
-                const tr = document.createElement('tr');
-                tr.className = `hover:bg-gray-800/40 transition-colors ${exp.paid ? 'opacity-60' : ''}`;
-
-                tr.innerHTML = `
-                    <td class="p-4 text-center">
-                        <button onclick="togglePaid(${exp.originalIndex})"
-                            class="w-8 h-8 rounded-full flex items-center justify-center mx-auto border-2 transition-all
-                            ${exp.paid ? 'bg-green-500 border-green-500 text-white' : overdue ? 'bg-red-900/30 border-red-500 text-transparent hover:border-red-400' : 'bg-transparent border-gray-600 text-transparent hover:border-green-400'}"
-                            title="${exp.paid ? 'Marcar pendente' : 'Marcar pago'}">
-                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M5 13l4 4L19 7"></path></svg>
-                        </button>
-                    </td>
-                    <td class="p-4">
-                        <span class="font-medium ${exp.paid ? 'line-through text-gray-500' : 'text-gray-200'}">${exp.desc}</span>
-                        ${overdue ? '<span class="ml-2 text-xs text-red-400 font-semibold">VENCIDO</span>' : ''}
-                        <span class="sm:hidden block mt-1">${categoryBadge(exp.category)}</span>
-                    </td>
-                    <td class="p-4 hidden sm:table-cell">${categoryBadge(exp.category)}</td>
-                    <td class="p-4 hidden md:table-cell ${overdue ? 'text-red-400' : 'text-gray-400'}">${formatDate(exp.dueDate)}</td>
-                    <td class="p-4 text-right font-semibold ${exp.paid ? 'text-gray-500' : 'text-gray-100'}">${formatCurrency(exp.value)}</td>
-                    <td class="p-4 text-right">
-                        <button onclick="openEditModal(${exp.originalIndex})" class="text-gray-600 hover:text-blue-400 p-1 transition" title="Editar">✎</button>
-                        <button onclick="deleteExpense(${exp.originalIndex})" class="text-gray-600 hover:text-red-400 p-1 transition" title="Excluir">✕</button>
-                    </td>`;
-                listEl.appendChild(tr);
-            });
-        }
-
-        document.getElementById('addExpenseForm').addEventListener('submit', e => {
-            e.preventDefault();
-            const desc = document.getElementById('descInput').value.trim();
-            const value = parseFloat(document.getElementById('valueInput').value);
-            const category = document.getElementById('categoryInput').value;
-            const dueDate = document.getElementById('dueDateInput').value || null;
-            if (!desc || isNaN(value)) return;
-
-            getCurrentData().expenses.push({
-                id: genId(), desc, value, category, dueDate, paid: false, paidDate: null
-            });
-            saveData();
-            e.target.reset();
-            document.getElementById('descInput').focus();
-        });
-
-        function togglePaid(index) {
-            const exp = getCurrentData().expenses[index];
-            exp.paid = !exp.paid;
-            exp.paidDate = exp.paid ? today.toISOString().slice(0, 10) : null;
-            saveData();
-        }
-
-        function deleteExpense(index) {
-            const exp = getCurrentData().expenses[index];
-            if (confirm(`Excluir "${exp.desc}" (${formatCurrency(exp.value)})?`)) {
-                getCurrentData().expenses.splice(index, 1);
-                saveData();
-            }
-        }
-
-        function editIncome() {
-            const current = getCurrentData().income;
-            const newVal = prompt('Receita (Salário) deste mês:', current);
-            if (newVal === null) return;
-            const parsed = parseFloat(newVal.replace(',', '.'));
-            if (!isNaN(parsed)) {
-                getCurrentData().income = parsed;
-                saveData();
+        function preencherFiltros() {
+            const mesSel = document.getElementById('filtroMes');
+            const catSel = document.getElementById('filtroCat');
+            const meses = [...new Set([
+                ...(dados.contabilidade || []).map(r => r.mes),
+                ...(dados.emprestimos || []).map(r => r.mes)
+            ])].sort();
+            const hoje = `${new Date().getFullYear()}-${String(new Date().getMonth() + 1).padStart(2, '0')}`;
+            const mesKeep = mesSel.value || (meses.includes(hoje) ? hoje : (meses[0] || ''));
+            mesSel.innerHTML = meses.map(m => `<option value="${m}">${mesFull(m)}</option>`).join('');
+            if (meses.includes(mesKeep)) mesSel.value = mesKeep;
+            const catKeep = catSel.value || 'todas';
+            if (view === 'emprestimos') {
+                catSel.innerHTML = '<option value="todas">Total dos empréstimos</option><option value="1">Empréstimo 1</option><option value="2">Empréstimo 2</option>';
             } else {
-                alert('Digite um valor numérico válido.');
+                catSel.innerHTML = '<option value="todas">Todas as categorias</option>' + CATEGORIAS.map(c => `<option value="${c.id}">${c.label}</option>`).join('');
+            }
+            if ([...catSel.options].some(o => o.value === catKeep)) catSel.value = catKeep;
+        }
+
+        function render() {
+            if (view === 'contabilidade') renderContab();
+            else renderEmp();
+        }
+
+        function renderContab() {
+            const row = linhaMes();
+            const cat = document.getElementById('filtroCat').value;
+            const grupos = CATEGORIAS.filter(g => cat === 'todas' || g.id === cat);
+            document.getElementById('viewContabilidade').innerHTML = `
+                <div class="card">
+                    <div class="card-head"><h3>Receita e pagamento</h3></div>
+                    <div class="card-body">
+                        <div class="row"><div><label>Salário</label></div><input id="cSalario" type="number" step="0.01" value="${show(row.salario)}"></div>
+                        <div class="row"><div><label>Valor já pago</label></div><input id="cPago" type="number" step="0.01" value="${show(row.valor_pago)}"></div>
+                    </div>
+                </div>
+                <div class="cats" id="cats">${grupos.map(g => {
+                    const campos = CAMPOS.filter(c => c.categoria === g.id);
+                    const subtotal = round2(campos.reduce((a, c) => a + num(row[c.id]), 0));
+                    return `<section class="card cat cat-${g.id}" data-cat="${g.id}">
+                        <div class="card-head"><h3>${g.label}</h3><span class="meta">${money(subtotal)}</span></div>
+                        <div class="card-body">${campos.map(c => `
+                            <div class="row">
+                                <div><label>${c.label}</label></div>
+                                <input id="c_${c.id}" type="number" step="0.01" value="${show(row[c.id])}">
+                            </div>`).join('')}
+                        </div>
+                    </section>`;
+                }).join('')}</div>
+                <div class="card"><div class="totals" id="totais"></div></div>`;
+            document.querySelectorAll('#viewContabilidade input').forEach(i => i.addEventListener('input', atualizarTotais));
+            atualizarTotais();
+        }
+
+        function somaTotal() {
+            return round2(idsTotal().reduce((a, id) => a + num(document.getElementById('c_' + id)?.value), 0));
+        }
+        function atualizarTotais() {
+            const salario = num(document.getElementById('cSalario')?.value);
+            const pago = num(document.getElementById('cPago')?.value);
+            const total = somaTotal();
+            const falta = round2(total - pago);
+            const sobra = round2(salario - total);
+            document.getElementById('kpis').innerHTML = [
+                ['Salário', money(salario), ''],
+                ['Total a pagar', money(total), ''],
+                [falta < 0 ? 'Pago a mais' : 'Ainda falta', money(Math.abs(falta)), falta > 0 ? 'warn' : 'pos'],
+                ['Sobra', money(sobra), sobra >= 0 ? 'pos' : 'neg']
+            ].map(([l,v,c]) => `<article class="kpi"><label>${l}</label><strong class="${c}">${v}</strong></article>`).join('');
+            const box = document.getElementById('totais');
+            if (box) box.innerHTML = `
+                <div>Total a pagar<strong>${money(total)}</strong></div>
+                <div>Faltante<strong class="${falta>0?'warn':''}">${money(falta)}</strong></div>
+                <div>Sobra<strong class="${sobra>=0?'pos':'neg'}">${money(sobra)}</strong></div>`;
+            CATEGORIAS.forEach(g => {
+                const card = document.querySelector(`#cats .card[data-cat="${g.id}"]`);
+                if (!card) return;
+                const subtotal = round2(CAMPOS.filter(c => c.categoria === g.id)
+                    .reduce((a, c) => a + num(document.getElementById('c_' + c.id)?.value), 0));
+                const meta = card.querySelector('.card-head .meta');
+                if (meta) meta.textContent = money(subtotal);
+            });
+        }
+
+        function coletarMes() {
+            const payload = { mes: mesAtual(), salario: num(document.getElementById('cSalario')?.value), valor_pago: num(document.getElementById('cPago')?.value) };
+            const atual = linhaMes();
+            CAMPOS.forEach(c => {
+                const el = document.getElementById('c_' + c.id);
+                payload[c.id] = el ? num(el.value) : num(atual[c.id]);
+            });
+            return payload;
+        }
+
+        function renderEmp() {
+            const mes = mesAtual();
+            const cat = document.getElementById('filtroCat').value;
+            const nums = cat === 'todas' ? [1, 2] : [Number(cat)];
+            const cards = nums.map(n => {
+                const lista = (dados.emprestimos || [])
+                    .filter(r => Number(r.emprestimo) === Number(n))
+                    .sort((a,b) => a.mes.localeCompare(b.mes));
+                const original = lista.length ? Number(lista[0].saldo_inicio) || 0 : 0;
+                const atual = lista.find(r => r.mes === mes);
+                const saldoMes = atual ? Number(atual.saldo_inicio) || 0 : (lista.length && mes < lista[0].mes ? original : 0);
+                const pagMes = atual ? Number(atual.pagamento) || 0 : 0;
+                const juros = round2(saldoMes * 0.02);
+                const pagj = round2(pagMes + juros);
+                const fim = round2(saldoMes - pagMes);
+                return `<section class="card cat cat-emp${n}" data-emp="${n}" data-original="${original}">
+                    <div class="card-head"><h3>Empréstimo ${n}</h3><span class="meta">Original ${money(original)}</span></div>
+                    <div class="card-body">
+                        <div class="row"><div><label>Saldo deste mês</label><div class="meta">Diminui a cada pagamento</div></div>
+                            <input class="saldo" type="number" step="0.01" value="${show(saldoMes)}"></div>
+                        <div class="row"><div><label>Juros 2%</label></div><div class="cell juros">${money(juros)}</div></div>
+                        <div class="row"><div><label>Pagamento</label></div>
+                            <input class="pag" type="number" step="0.01" value="${show(pagMes)}"></div>
+                        <div class="row"><div><label>Pagamento + juros</label></div><div class="cell pagj">${money(pagj)}</div></div>
+                        <div class="row"><div><label>Saldo no fim do mês</label><div class="meta">Saldo − pagamento</div></div><div class="cell fim">${money(fim)}</div></div>
+                    </div>
+                    <div class="evo">
+                        <table>
+                            <thead><tr><th>Mês</th><th class="num">Saldo</th><th class="num">Juros</th><th class="num">Pagamento</th><th class="num">Saldo fim</th></tr></thead>
+                            <tbody>${lista.map(r => `<tr>
+                                <td>${mesFull(r.mes)}</td>
+                                <td class="num">${money(r.saldo_inicio)}</td>
+                                <td class="num">${money(r.juros)}</td>
+                                <td class="num">${money(r.pagamento)}</td>
+                                <td class="num">${money(r.saldo_fim)}</td>
+                            </tr>`).join('')}</tbody>
+                        </table>
+                    </div>
+                    <input type="hidden" class="emp-id" value="${atual && atual.id ? atual.id : ''}">
+                    <input type="hidden" class="emp-n" value="${n}">
+                </section>`;
+            }).join('');
+            document.getElementById('viewEmprestimos').innerHTML = cards || '<p class="banner show">Nenhum empréstimo neste filtro.</p>';
+            document.querySelectorAll('#viewEmprestimos .card').forEach(card => {
+                card.querySelectorAll('input.saldo, input.pag').forEach(i => i.addEventListener('input', () => recalcEmpCard(card)));
+                recalcEmpCard(card);
+            });
+            atualizarKpiEmp();
+        }
+
+        function recalcEmpCard(card) {
+            const saldo = num(card.querySelector('.saldo').value);
+            const pag = num(card.querySelector('.pag').value);
+            const juros = round2(saldo * 0.02);
+            card.querySelector('.juros').textContent = money(juros);
+            card.querySelector('.pagj').textContent = money(round2(pag + juros));
+            card.querySelector('.fim').textContent = money(round2(saldo - pag));
+            atualizarKpiEmp();
+        }
+        function atualizarKpiEmp() {
+            const cards = [...document.querySelectorAll('#viewEmprestimos .card[data-emp]')];
+            const original = cards.reduce((a, c) => a + num(c.dataset.original), 0);
+            const saldo = cards.reduce((a, c) => a + num(c.querySelector('.saldo')?.value), 0);
+            const pag = cards.reduce((a, c) => a + num(c.querySelector('.pag')?.value), 0);
+            const juros = cards.reduce((a, c) => a + round2(num(c.querySelector('.saldo')?.value) * 0.02), 0);
+            const fim = round2(saldo - pag);
+            document.getElementById('kpis').innerHTML = [
+                ['Valor original', money(original), ''],
+                ['Saldo deste mês', money(saldo), ''],
+                ['Pagamento do mês', money(pag), ''],
+                ['Juros 2%', money(juros), 'warn']
+            ].map(([l,v,c]) => `<article class="kpi"><label>${l}</label><strong class="${c}">${v}</strong></article>`).join('');
+        }
+
+        async function salvarAtual() {
+            setStatus('load', 'Salvando...');
+            try {
+                if (view === 'contabilidade') {
+                    dados = await api('/api/contabilidade', {
+                        method: 'POST', headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(coletarMes())
+                    });
+                } else {
+                    const itens = [...document.querySelectorAll('#viewEmprestimos .card')].map(card => ({
+                        id: card.querySelector('.emp-id').value ? Number(card.querySelector('.emp-id').value) : null,
+                        mes: mesAtual(),
+                        emprestimo: Number(card.querySelector('.emp-n').value),
+                        saldo_inicio: num(card.querySelector('.saldo').value),
+                        pagamento: num(card.querySelector('.pag').value)
+                    }));
+                    dados = await api('/api/emprestimos/lote', {
+                        method: 'POST', headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ emprestimos: itens })
+                    });
+                }
+                setStatus('ok', 'Alterações salvas');
+                preencherFiltros();
+                render();
+            } catch (err) {
+                setStatus('err', 'Falha ao salvar');
+                alert(err.message);
             }
         }
 
-        function openEditModal(index) {
-            const exp = getCurrentData().expenses[index];
-            document.getElementById('editIndex').value = index;
-            document.getElementById('editDesc').value = exp.desc;
-            document.getElementById('editValue').value = exp.value;
-            document.getElementById('editCategory').value = exp.category || 'outros';
-            document.getElementById('editDueDate').value = exp.dueDate || '';
-            document.getElementById('editPaidDate').value = exp.paidDate || '';
-            document.getElementById('editPaid').checked = exp.paid;
-            document.getElementById('editModal').classList.remove('hidden');
+        async function carregar() {
+            if (location.protocol === 'file:') {
+                showBanner('Abra pelo Iniciar.bat, em http://localhost:8765.');
+                setStatus('err', 'Servidor não detectado');
+                return;
+            }
+            try {
+                dados = await api('/api/dados');
+                setStatus('ok', 'Pronto para editar');
+                preencherFiltros();
+                render();
+            } catch (err) {
+                showBanner('Não foi possível carregar. Execute o Iniciar.bat. ' + err.message);
+                setStatus('err', 'Falha ao carregar');
+            }
         }
-
-        function closeEditModal() {
-            document.getElementById('editModal').classList.add('hidden');
-        }
-
-        document.getElementById('editForm').addEventListener('submit', e => {
-            e.preventDefault();
-            const index = parseInt(document.getElementById('editIndex').value);
-            const exp = getCurrentData().expenses[index];
-            exp.desc = document.getElementById('editDesc').value.trim();
-            exp.value = parseFloat(document.getElementById('editValue').value);
-            exp.category = document.getElementById('editCategory').value;
-            exp.dueDate = document.getElementById('editDueDate').value || null;
-            exp.paid = document.getElementById('editPaid').checked;
-            exp.paidDate = exp.paid ? (document.getElementById('editPaidDate').value || today.toISOString().slice(0, 10)) : null;
-            closeEditModal();
-            saveData();
-        });
-
-        monthSelector.addEventListener('change', render);
-        document.getElementById('dueDateInput').value = today.toISOString().slice(0, 10);
-
-        initCategories();
-        loadData().then(() => render());
+        carregar();
     </script>
 </body>
 </html>
