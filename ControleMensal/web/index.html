@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Controle mensal</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,560;9..144,650&family=Outfit:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/css/app.css">
+</head>
+<body>
+    <div class="app">
+        <aside class="sidebar">
+            <div class="brand">Controle mensal<small>2026 e 2027</small></div>
+            <nav class="nav">
+                <button class="active" data-view="painel" type="button">Principal</button>
+                <button data-view="contabilidade" type="button">Lançamentos</button>
+                <button data-view="emprestimos" type="button">Empréstimos</button>
+            </nav>
+            <button class="nav-tema" id="btnTema" type="button">Tema escuro</button>
+            <div class="status"><span class="dot" id="dot"></span><span id="statusText">Carregando...</span></div>
+        </aside>
+        <main class="main">
+            <div class="banner" id="banner"></div>
+            <div class="top">
+                <div>
+                    <h2 id="pageTitle">Principal</h2>
+                    <p id="pageSub">Salário, total a pagar, o que já foi pago, o faltante e a sobra do mês.</p>
+                </div>
+                <div class="filters">
+                    <label class="field"><span>Mês</span><select id="filtroMes"></select></label>
+                    <label class="field" id="campoCat"><span>Categoria</span><select id="filtroCat"></select></label>
+                    <button class="btn" id="btnSalvar" type="button">Salvar</button>
+                </div>
+            </div>
+            <div class="acoes">
+                <button class="btn ghost hidden" id="btnCopiar" type="button">Copiar mês anterior</button>
+                <button class="btn ghost hidden" id="btnDesfazer" type="button">Desfazer</button>
+                <button class="btn ghost" id="btnExportar" type="button">Exportar mês</button>
+                <label class="check hidden" id="soAbertosCampo"><input type="checkbox" id="soAbertos"> Só em aberto</label>
+            </div>
+            <section class="kpis" id="kpis"></section>
+            <div id="viewPainel"></div>
+            <div id="viewContabilidade" class="hidden"></div>
+            <div id="viewEmprestimos" class="hidden"></div>
+        </main>
+    </div>
+    <script src="/js/app.js"></script>
+</body>
+</html>
