@@ -25,19 +25,16 @@
             <div class="top">
                 <div>
                     <h2 id="pageTitle">Principal</h2>
-                    <p id="pageSub">Salário, total a pagar, o que já foi pago, o faltante e a sobra do mês.</p>
+                    <p id="pageSub">Resumo do mês: salário, despesas, valores pagos, pendências e saldo.</p>
                 </div>
                 <div class="filters">
                     <label class="field"><span>Mês</span><select id="filtroMes"></select></label>
                     <label class="field" id="campoCat"><span>Categoria</span><select id="filtroCat"></select></label>
-                    <button class="btn" id="btnSalvar" type="button">Salvar</button>
                 </div>
             </div>
             <div class="acoes">
-                <button class="btn ghost hidden" id="btnCopiar" type="button">Copiar mês anterior</button>
-                <button class="btn ghost hidden" id="btnDesfazer" type="button">Desfazer</button>
                 <button class="btn ghost" id="btnExportar" type="button">Exportar mês</button>
-                <label class="check hidden" id="soAbertosCampo"><input type="checkbox" id="soAbertos"> Só em aberto</label>
+                <label class="check hidden" id="soAbertosCampo"><input type="checkbox" id="soAbertos"> Somente pendentes</label>
             </div>
             <section class="kpis" id="kpis"></section>
             <div id="viewPainel"></div>
@@ -45,6 +42,7 @@
             <div id="viewEmprestimos" class="hidden"></div>
         </main>
     </div>
+    <script src="/js/grafico.js"></script>
     <script src="/js/app.js"></script>
 </body>
 </html>

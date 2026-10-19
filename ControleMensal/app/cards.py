@@ -30,6 +30,17 @@ def garantir_tabelas(cur):
             )
             """
         )
+    cur.execute("SELECT COUNT(*) FROM user_tables WHERE table_name = 'CATEGORIAS_USUARIO'")
+    if cur.fetchone()[0] == 0:
+        cur.execute(
+            """
+            CREATE TABLE CATEGORIAS_USUARIO (
+                ID VARCHAR2(40) PRIMARY KEY,
+                LABEL VARCHAR2(60) NOT NULL,
+                ORDEM NUMBER(4) DEFAULT 0 NOT NULL
+            )
+            """
+        )
     cur.execute("SELECT COUNT(*) FROM user_tables WHERE table_name = 'LANCAMENTOS'")
     if cur.fetchone()[0] == 0:
         cur.execute(
@@ -84,11 +95,12 @@ def garantir_tabelas(cur):
         cur.execute(
             """
             UPDATE CARDS
-            SET LABEL = :label, CATEGORIA = :categoria, VENCIMENTO = :vencimento,
+            SET CATEGORIA = :categoria, VENCIMENTO = :vencimento,
                 ORDEM = :ordem, DICA = :dica
             WHERE ID = :id AND SISTEMA = 1
             """,
-            **dados_card,
+            **{chave: valor for chave, valor in dados_card.items() if chave not in ("label", "id")},
+            id=dados_card["id"],
         )
 
 
@@ -165,10 +177,36 @@ def _exigir_label(texto):
     return label
 
 
-def _exigir_categoria(categoria):
-    if categoria not in _CATEGORIAS:
-        raise ErroValidacao("Escolha uma categoria.")
-    return categoria
+def listar_categorias(cur):
+    cur.execute("SELECT ID, LABEL FROM CATEGORIAS_USUARIO ORDER BY ORDEM, ID")
+    return [{"id": identificador, "label": label} for identificador, label in cur.fetchall()]
+
+
+def criar_categoria(cur, texto):
+    label = " ".join(str(texto or "").split())
+    if len(label) < 2 or len(label) > 40:
+        raise ErroValidacao("O nome da categoria precisa ter entre 2 e 40 caracteres.")
+    existentes = listar_categorias(cur)
+    nomes = {item[1].lower() for item in CATEGORIAS} | {item["label"].lower() for item in existentes}
+    if label.lower() in nomes:
+        raise ErroValidacao("Já existe uma categoria com esse nome.")
+    usados = set(_CATEGORIAS) | {item["id"] for item in existentes} | {"receita", "todas", "emprestimos", "novo"}
+    identificador = _slug(label, usados)
+    cur.execute("SELECT NVL(MAX(ORDEM), 0) FROM CATEGORIAS_USUARIO")
+    ordem = int(cur.fetchone()[0]) + 10
+    cur.execute(
+        "INSERT INTO CATEGORIAS_USUARIO (ID, LABEL, ORDEM) VALUES (:id, :label, :ordem)",
+        id=identificador,
+        label=label,
+        ordem=ordem,
+    )
+    return identificador
+
+
+def _exigir_categoria(cur, categoria):
+    if categoria in _CATEGORIAS or any(item["id"] == categoria for item in listar_categorias(cur)):
+        return categoria
+    raise ErroValidacao("Escolha uma categoria.")
 
 
 def _vencimento(valor):
@@ -194,7 +232,10 @@ def _cartao(valor):
 
 def criar(cur, payload):
     label = _exigir_label(payload.get("label"))
-    categoria = _exigir_categoria(payload.get("categoria"))
+    if str(payload.get("nova_categoria") or "").strip():
+        categoria = criar_categoria(cur, payload.get("nova_categoria"))
+    else:
+        categoria = _exigir_categoria(cur, payload.get("categoria"))
     dia = _vencimento(payload.get("vencimento"))
     entra = 1 if payload.get("entra_padrao") in (1, True, "1", "true") else 0
     usados = {linha[0] for linha in _selecionar_ids(cur)}
@@ -245,7 +286,7 @@ def atualizar(cur, payload):
     if not atual:
         raise ErroValidacao("Card não encontrado.")
     label = _exigir_label(payload.get("label", atual["label"]))
-    categoria = _exigir_categoria(payload.get("categoria", atual["categoria"]))
+    categoria = _exigir_categoria(cur, payload.get("categoria", atual["categoria"]))
     if "vencimento" in payload:
         dia = _vencimento(payload.get("vencimento"))
     else:

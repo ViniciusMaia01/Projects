@@ -229,7 +229,10 @@ _LINHAS_TOTAL = (
 )
 
 
-def contas_do_mes(valores, salario, pagos, cards, acrescimos=None):
+_CATEGORIAS_CONHECIDAS = {item[0] for item in CATEGORIAS} | {"emprestimos"}
+
+
+def contas_do_mes(valores, salario, pagos, cards, acrescimos=None, entra=None):
     """Total a pagar sai do salário.
 
     Entram Das, Max, Oliveira, Gabriel, Pessoa, Variáveis, Internet,
@@ -277,6 +280,13 @@ def contas_do_mes(valores, salario, pagos, cards, acrescimos=None):
         if card["id"] in _LINHAS_TOTAL:
             continue
         somar(card["id"], dinheiro(valores.get(card["id"], 0)))
+    incluidos = set(entra) if entra is not None else None
+    for card in ativos:
+        if card.get("categoria") in _CATEGORIAS_CONHECIDAS or card["id"] in _LINHAS_TOTAL:
+            continue
+        if incluidos is not None and card["id"] not in incluidos:
+            continue
+        somar(card["id"], dinheiro(valores.get(card["id"], 0)))
     total = dinheiro(total)
     pago = dinheiro(pago)
     salario = dinheiro(salario)
@@ -284,7 +294,7 @@ def contas_do_mes(valores, salario, pagos, cards, acrescimos=None):
 
 
 def _calculados(valores, salario, entra, pagos, formulas=None, acrescimos=None):
-    return contas_do_mes(valores, salario, pagos, _CARDS, acrescimos)
+    return contas_do_mes(valores, salario, pagos, _CARDS, acrescimos, entra)
 
 
 def _fora_aberto(valores, entra, pagos):
@@ -705,6 +715,7 @@ def buscar_tudo():
             }
             for row in cur
         ]
+        personalizadas = catalogo.listar_categorias(cur)
     acrescimos = {}
     for nota in observacoes:
         if nota["tipo"] != "fatura" or not nota["apelido"]:
@@ -725,6 +736,9 @@ def buscar_tudo():
         "categorias": [
             {"id": identificador, "label": rotulo, "icone": icone}
             for identificador, rotulo, icone in CATEGORIAS
+        ] + [
+            {"id": item["id"], "label": item["label"], "icone": "outro", "personalizada": True}
+            for item in personalizadas
         ],
     }
 
@@ -982,7 +996,7 @@ def quitar_emprestimo(payload):
                 mes=_mes_data(mes),
                 emp=numero,
                 valor=dinheiro(saldo + juros),
-                texto=f"Empréstimo {numero} quitado em {_legivel(mes)}. Pago {dinheiro(saldo + juros)} (saldo {saldo} e juros {juros}) e o saldo seguinte ficou zerado.",
+                texto=f"Empréstimo {numero} quitado em {_legivel(mes)}. Valor pago: {dinheiro(saldo + juros)} (saldo {saldo} e juros {juros}). Saldo seguinte zerado.",
             )
             conn.commit()
         except Exception:

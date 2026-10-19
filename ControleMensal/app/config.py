@@ -29,7 +29,7 @@ def _conexao():
 
 DSN, DB_USER, DB_PASSWORD = _conexao()
 
-# Itens com no_total ficam fora do "Total a pagar" na maior parte dos meses.
+# Itens com no_total ficam fora do "Total de despesas" na maior parte dos meses.
 # Alguns meses da planilha incluem ou tiram um item; essa lista mensal é lida da fórmula.
 CATEGORIAS = [
     ("pessoas", "Pessoas", "pessoa"),
@@ -42,13 +42,13 @@ CATEGORIAS = [
 
 CAMPOS = [
     {"id": "das", "coluna": "DAS", "label": "Taxas", "categoria": "taxas", "excel": 4, "no_total": False,
-     "dica": "DAS da planilha"},
+     "dica": "Guia DAS (imposto)"},
     {"id": "maximo", "coluna": "MAXIMO", "label": "Max", "categoria": "pessoas", "excel": 5, "no_total": False},
     {"id": "oliveira", "coluna": "OLIVEIRA", "label": "Oliveira", "categoria": "pessoas", "excel": 6, "no_total": False,
-     "dica": "Soma das parcelas com juros dos dois empréstimos"},
+     "dica": "Soma das parcelas, com juros, dos empréstimos 1 e 2"},
     {"id": "gabriel", "coluna": "GABRIEL", "label": "Gabriel", "categoria": "pessoas", "excel": 7, "no_total": False},
     {"id": "aluguel", "coluna": "ALUGUEL", "label": "Pessoa", "categoria": "pessoas", "excel": 8, "no_total": False,
-     "dica": "Linha sem nome na planilha. Dá para renomear."},
+     "dica": "Item sem descrição. Use Renomear para identificá-lo."},
     {"id": "variaveis", "coluna": "VARIAVEIS", "label": "Variáveis", "categoria": "variaveis", "excel": 9, "no_total": False},
     {"id": "internet", "coluna": "INTERNET", "label": "Internet", "categoria": "assinaturas", "excel": 10, "no_total": False},
     {"id": "netflix", "coluna": "NETFLIX", "label": "Netflix", "categoria": "assinaturas", "excel": 11, "no_total": True, "vencimento": 18},
@@ -59,10 +59,10 @@ CAMPOS = [
     {"id": "mercado_pago", "coluna": "MERCADO_PAGO", "label": "Mercado Pago", "categoria": "cartoes", "excel": 16, "no_total": False},
     {"id": "nubank", "coluna": "NUBANK", "label": "Nubank - Fatura", "categoria": "cartoes", "excel": 17, "no_total": False},
     {"id": "emprestimo_nu", "coluna": "EMPRESTIMO_NU", "label": "Empréstimo Nu", "categoria": "emprestimos", "excel": 18, "no_total": False,
-     "dica": "Parcela do Nu. Entra na conta do mês e aparece em Empréstimos."},
+     "dica": "Parcela do empréstimo Nu, incluída no total de despesas e detalhada na aba Empréstimos."},
     {"id": "gasolina", "coluna": "GASOLINA", "label": "Gasolina", "categoria": "custo_fixo", "excel": 19, "no_total": True},
     {"id": "investimento", "coluna": "INVESTIMENTO", "label": "Investimento", "categoria": "taxas", "excel": 20, "no_total": False,
-     "dica": "Sai do salário e entra no total"},
+     "dica": "Deduzido do salário e incluído no total de despesas"},
 ]
 
 LINHA_POR_ID = {campo["id"]: campo["excel"] for campo in CAMPOS}

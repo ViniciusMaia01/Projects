@@ -98,7 +98,7 @@ def linhas_do_mes(dados, mes):
     categorias = {item["id"]: item["label"] for item in dados["categorias"]}
     entra = set(linha.get("entra") or [])
     pagos = set(linha.get("itens_pagos") or [])
-    contas = [["Categoria", "Card", "Valor", "Entra no total", "Pago", "Vencimento"]]
+    contas = [["Categoria", "Card", "Valor", "Incluído no total", "Pago", "Vencimento"]]
     for campo in dados["campos"]:
         contas.append([
             categorias.get(campo["categoria"], campo["categoria"]),
@@ -111,13 +111,13 @@ def linhas_do_mes(dados, mes):
     contas.extend([
         [],
         ["Salário", float(linha.get("salario") or 0)],
-        ["Total a pagar", float(linha.get("total_a_pagar") or 0)],
-        ["Já pago", float(linha.get("valor_pago") or 0)],
-        ["Faltante", float(linha.get("valor_faltante") or 0)],
-        ["Sobra", float(linha.get("sobra") or 0)],
-        ["Fora do total em aberto", float(linha.get("fora_aberto") or 0)],
+        ["Total de despesas", float(linha.get("total_a_pagar") or 0)],
+        ["Total pago", float(linha.get("valor_pago") or 0)],
+        ["Pendente", float(linha.get("valor_faltante") or 0)],
+        ["Saldo do mês", float(linha.get("sobra") or 0)],
+        ["Pendente fora do total", float(linha.get("fora_aberto") or 0)],
     ])
-    emprestimos = [["Empréstimo", "Saldo", "Juros", "Pagamento", "Saldo fim", "Pago"]]
+    emprestimos = [["Empréstimo", "Saldo inicial", "Juros", "Pagamento", "Saldo final", "Pago"]]
     for item in dados["emprestimos"]:
         if item["mes"] != mes:
             continue

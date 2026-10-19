@@ -6,8 +6,9 @@ let view = "painel";
 let rascunho = null;
 let sujo = false;
 let mesAntes = "";
-let historico = [];
 let revelados = new Set();
+let rascunhoEmp = {};
+let rascunhoNu = null;
 const CARTOES = [
     ["", "Sem cartão"],
     ["bradesco", "Bradesco"],
@@ -44,7 +45,6 @@ const hojeYm = () => {
     const hoje = new Date();
     return `${hoje.getFullYear()}-${String(hoje.getMonth() + 1).padStart(2, "0")}`;
 };
-
 function setStatus(tipo, texto) {
     document.getElementById("dot").className = "dot " + tipo;
     document.getElementById("statusText").textContent = texto;
@@ -114,31 +114,38 @@ function brlCampo(classe, valor) {
     return `<div class="brl-wrap"><span>R$</span><input class="brl ${classe}" inputmode="decimal" value="${fmtBrl(valor)}"></div>`;
 }
 function pagoBtn(ativo, attrs) {
-    return `<button type="button" class="pago-btn ${ativo ? "on" : ""}" aria-pressed="${ativo}" ${attrs || ""}>${ativo ? "Pago" : "Em aberto"}</button>`;
+    return `<button type="button" class="pago-btn ${ativo ? "on" : ""}" aria-pressed="${ativo}" ${attrs || ""}>${ativo ? "Pago" : "Pendente"}</button>`;
 }
 
+function temPendente() {
+    if (Object.keys(rascunhoEmp).length || rascunhoNu) return true;
+    if (view === "contabilidade" && [...document.querySelectorAll("#viewContabilidade .card[data-cat]")].some(formPendente)) return true;
+    if (rascunho && assinatura(rascunho) !== assinatura(linhaSalva())) return true;
+    return false;
+}
 function podeDescartar() {
-    return !sujo || confirm("Há alterações não salvas neste mês. Deseja descartar?");
+    return !temPendente() || confirm("Há alterações não salvas. Deseja descartar?");
+}
+function limparRascunhos() {
+    sujo = false;
+    rascunho = null;
+    revelados = new Set();
+    rascunhoEmp = {};
+    rascunhoNu = null;
 }
 const TITULOS = {
-    painel: ["Principal", "Salário, total a pagar, o que já foi pago, o faltante e a sobra do mês."],
-    contabilidade: ["Lançamentos", "Pessoas, variáveis, assinaturas, cartões, custo fixo e taxas. O Nu fica em Empréstimos."],
-    emprestimos: ["Empréstimos", "Dois empréstimos, com a parcela do mês, o que ainda falta e o saldo do mês seguinte. O Nu entra aqui."]
+    painel: ["Principal", "Resumo do mês: salário, despesas, valores pagos, pendências e saldo."],
+    contabilidade: ["Lançamentos", "Lançamentos por categoria: pessoas, variáveis, assinaturas, cartões, custo fixo e taxas. O empréstimo Nu fica na aba Empréstimos."],
+    emprestimos: ["Empréstimos", "Acompanhamento dos empréstimos: parcela do mês, saldo devedor e projeção do mês seguinte. Inclui o empréstimo Nu."]
 };
 function ajustarAcoes() {
-    document.getElementById("btnCopiar").classList.toggle("hidden", view !== "contabilidade");
-    document.getElementById("btnDesfazer").classList.toggle("hidden", view !== "contabilidade");
     document.getElementById("soAbertosCampo").classList.toggle("hidden", view !== "contabilidade");
     document.getElementById("campoCat").classList.toggle("hidden", view === "painel");
-    document.getElementById("btnSalvar").classList.toggle("hidden", view === "painel");
 }
 function setView(next) {
     if (next === view) return;
     if (!podeDescartar()) return;
-    sujo = false;
-    rascunho = null;
-    historico = [];
-    revelados = new Set();
+    limparRascunhos();
     view = next;
     document.querySelectorAll(".nav button").forEach(botao => botao.classList.toggle("active", botao.dataset.view === next));
     const [titulo, sub] = TITULOS[next];
@@ -208,15 +215,11 @@ function assinatura(row) {
     });
 }
 function lembrar() {
-    const anterior = JSON.parse(JSON.stringify(rascunho || linhaSalva()));
     const proximo = coletarMes();
-    if (assinatura(anterior) !== assinatura(proximo)) {
-        historico.push(anterior);
-        if (historico.length > 40) historico.shift();
-    }
     rascunho = proximo;
-    sujo = assinatura(proximo) !== assinatura(linhaSalva());
+    sujo = temPendente();
     atualizarTotais();
+    atualizarRodapes();
 }
 function avaliarSpec(spec, contexto) {
     if (!spec || spec.tipo === "fixo") return round2((spec && spec.valor) || 0);
@@ -231,6 +234,7 @@ function avaliarSpec(spec, contexto) {
         return acc + sinal * base;
     }, 0));
 }
+const CATEGORIAS_FIXAS = ["pessoas", "variaveis", "assinaturas", "cartoes", "custo_fixo", "taxas", "emprestimos"];
 const LINHAS_TOTAL = ["das", "maximo", "oliveira", "gabriel", "aluguel", "variaveis", "internet", "emprestimo_nu", "gasolina", "investimento"];
 function listaCartoes() {
     const lista = [["bradesco", "Bradesco"], ["nubank", "Nubank"], ["mercado_pago", "Mercado Pago"]];
@@ -273,11 +277,15 @@ function componentes(row) {
     CAMPOS.filter(campo => ["pessoas", "variaveis", "custo_fixo", "taxas"].includes(campo.categoria) && !LINHAS_TOTAL.includes(campo.id)).forEach(campo => {
         itens.push({ id: campo.id, label: campo.label, valor: valorLinha(row, campo.id), pago: pagos.has(campo.id) });
     });
+    const incluidos = new Set(idsEntra(row));
+    CAMPOS.filter(campo => !CATEGORIAS_FIXAS.includes(campo.categoria) && !LINHAS_TOTAL.includes(campo.id) && incluidos.has(campo.id)).forEach(campo => {
+        itens.push({ id: campo.id, label: campo.label, valor: valorLinha(row, campo.id), pago: pagos.has(campo.id) });
+    });
     return itens;
 }
 function textoInvestimento(valor) {
     const numero = num(valor);
-    if (!Number.isFinite(numero) || numero <= 0) return "Nenhum valor";
+    if (!Number.isFinite(numero) || numero <= 0) return "Sem aporte";
     return money(numero);
 }
 function somas(row) {
@@ -295,6 +303,131 @@ function somas(row) {
     };
 }
 
+function idsDoCard(catId) {
+    if (catId === "receita") return [];
+    return CAMPOS.filter(campo => campo.categoria === catId).map(campo => campo.id);
+}
+function cardDifere(catId, atual, salvo) {
+    atual = atual || rascunho || linhaSalva();
+    salvo = salvo || linhaSalva();
+    if (catId === "receita") return num(atual.salario) !== num(salvo.salario);
+    const ids = idsDoCard(catId);
+    if (ids.some(id => num(atual[id]) !== num(salvo[id]))) return true;
+    const pagosA = new Set(atual.itens_pagos || []);
+    const pagosS = new Set(salvo.itens_pagos || []);
+    if (ids.some(id => pagosA.has(id) !== pagosS.has(id))) return true;
+    const entraA = new Set(atual.entra && atual.entra.length ? atual.entra : idsEntra(atual));
+    const entraS = new Set(idsEntra(salvo));
+    return ids.some(id => entraA.has(id) !== entraS.has(id));
+}
+function formPendente(card) {
+    if (!card) return false;
+    return [...card.querySelectorAll("form.form-linha-card")].some(form => {
+        const label = (form.elements.label?.value || "").trim();
+        const valor = form.elements.valor ? num(form.elements.valor.value) : 0;
+        return Boolean(label) || valor > 0;
+    });
+}
+function rodapeLancamento(catId) {
+    const alterado = cardDifere(catId);
+    return `<div class="card-foot"><button type="button" class="btn ghost ${alterado ? "" : "hidden"}" data-desfazer-cat="${catId}">Desfazer</button><button type="button" class="btn" data-salvar-cat="${catId}" ${alterado ? "" : "disabled"}>Salvar</button></div>`;
+}
+function atualizarRodapes() {
+    document.querySelectorAll("[data-salvar-cat]").forEach(botao => {
+        const id = botao.dataset.salvarCat;
+        const alterado = cardDifere(id, coletarMes(), linhaSalva());
+        const incluindo = formPendente(botao.closest(".card"));
+        if (!botao.classList.contains("is-busy")) botao.disabled = !(alterado || incluindo);
+        const desfazer = botao.parentElement.querySelector("[data-desfazer-cat]");
+        if (desfazer) desfazer.classList.toggle("hidden", !alterado);
+    });
+    sujo = temPendente();
+}
+function extrairParte(row, catId) {
+    if (catId === "receita") return { salario: num(row.salario) };
+    const ids = idsDoCard(catId);
+    return {
+        valores: Object.fromEntries(ids.map(id => [id, num(row[id])])),
+        pagos: ids.filter(id => (row.itens_pagos || []).includes(id)),
+        entra: ids.filter(id => new Set(row.entra || []).has(id))
+    };
+}
+function aplicarParte(base, catId, parte) {
+    if (catId === "receita") {
+        base.salario = num(parte.salario);
+        return base;
+    }
+    Object.entries(parte.valores).forEach(([id, valor]) => { base[id] = valor; });
+    const ids = new Set(Object.keys(parte.valores));
+    const pagos = new Set(base.itens_pagos || []);
+    ids.forEach(id => { if (parte.pagos.includes(id)) pagos.add(id); else pagos.delete(id); });
+    base.itens_pagos = [...pagos];
+    const entra = new Set(idsEntra(base));
+    ids.forEach(id => { if (parte.entra.includes(id)) entra.add(id); else entra.delete(id); });
+    base.entra = CAMPOS.map(campo => campo.id).filter(id => entra.has(id));
+    return base;
+}
+function snapshotOutros(catId) {
+    const atual = coletarMes();
+    const salvo = linhaSalva();
+    const manter = {};
+    ["receita", ...CATEGORIAS.map(grupo => grupo.id)].filter(id => id !== catId).forEach(id => {
+        if (cardDifere(id, atual, salvo)) manter[id] = extrairParte(atual, id);
+    });
+    return manter;
+}
+function reaplicarOutros(manter) {
+    const ids = Object.keys(manter);
+    if (!ids.length) {
+        rascunho = null;
+        sujo = temPendente();
+        return;
+    }
+    const base = linhaSalva();
+    ids.forEach(id => aplicarParte(base, id, manter[id]));
+    rascunho = base;
+    sujo = true;
+}
+function payloadDoCard(catId) {
+    const atual = coletarMes();
+    const salvo = linhaSalva();
+    const payload = { mes: atual.mes };
+    if (catId === "receita") {
+        payload.salario = num(atual.salario);
+        return payload;
+    }
+    const ids = idsDoCard(catId);
+    ids.forEach(id => {
+        if (id === "oliveira" && atual.oliveira_calculado) return;
+        payload[id] = num(atual[id]);
+    });
+    const pagos = new Set(salvo.itens_pagos || []);
+    const pagosAtuais = new Set(atual.itens_pagos || []);
+    ids.forEach(id => { if (pagosAtuais.has(id)) pagos.add(id); else pagos.delete(id); });
+    payload.itens_pagos = [...pagos];
+    const entra = new Set(idsEntra(salvo));
+    const entraAtual = new Set(atual.entra && atual.entra.length ? atual.entra : idsEntra(atual));
+    ids.forEach(id => { if (entraAtual.has(id)) entra.add(id); else entra.delete(id); });
+    payload.entra = CAMPOS.map(campo => campo.id).filter(id => entra.has(id));
+    return payload;
+}
+function ocupar(botao, ocupado) {
+    if (!botao) return;
+    botao.disabled = ocupado;
+    botao.classList.toggle("is-busy", ocupado);
+}
+function normalizarRascunho(row) {
+    const salvo = linhaSalva();
+    const algum = ["receita", ...CATEGORIAS.map(grupo => grupo.id)].some(id => cardDifere(id, row, salvo));
+    if (!algum) {
+        rascunho = null;
+        sujo = temPendente();
+    } else {
+        rascunho = row;
+        sujo = true;
+    }
+}
+
 function renderContab() {
     const row = rascunho || linhaSalva();
     const cat = document.getElementById("filtroCat").value;
@@ -302,18 +435,22 @@ function renderContab() {
     const pagos = new Set(row.itens_pagos || []);
     const entra = new Set(idsEntra(row));
     document.getElementById("viewContabilidade").innerHTML = `
-        <div class="card cat cat-receita">
+        <div class="card cat cat-receita" data-cat="receita">
             <div class="card-head"><h3>Receita</h3></div>
             <div class="card-body">
                 <div class="row simple"><div><label>Salário</label></div>${brlInput("cSalario", row.salario)}</div>
             </div>
+            ${rodapeLancamento("receita")}
         </div>
         <div class="cats">${grupos.map(grupo => cardCategoria(grupo, row, entra, pagos)).join("")}</div>
         ${renderNotas(row.mes)}
         ${renderNovoCard()}
         ${renderOcultos()}
         <div class="card cat cat-totais"><div class="totals" id="totais"></div></div>`;
-    document.querySelectorAll("#viewContabilidade input.brl").forEach(ligarBrl);
+    document.querySelectorAll("#viewContabilidade input.brl").forEach(input => {
+        if (input.form) ligarBrlForm(input);
+        else ligarBrl(input);
+    });
     document.querySelectorAll("#viewContabilidade .pago-btn").forEach(botao => {
         botao.addEventListener("click", () => {
             alternarPago(botao);
@@ -321,21 +458,27 @@ function renderContab() {
         });
     });
     ligarAcoesLinha();
-    document.querySelectorAll("[data-mostrar-btn]").forEach(botao => botao.addEventListener("click", () => {
-        const select = document.querySelector(`[data-mostrar="${botao.dataset.mostrarBtn}"]`);
-        if (!select || !select.value) return;
-        revelados.add(select.value);
-        render();
-    }));
     document.querySelectorAll(".form-linha-card").forEach(form => form.addEventListener("submit", criarLinha));
+    ligarRodapes();
+    atualizarRodapes();
     const formNota = document.getElementById("formNota");
     if (formNota) formNota.addEventListener("submit", salvarNota);
     const formCard = document.getElementById("formCard");
-    if (formCard) formCard.addEventListener("submit", criarCard);
+    if (formCard) {
+        formCard.addEventListener("submit", criarCard);
+        const seletor = formCard.elements.categoria;
+        const trocar = () => {
+            const nova = seletor.value === "__nova__";
+            formCard.querySelector("[data-nova-categoria]").classList.toggle("hidden", !nova);
+            formCard.elements.nova_categoria.required = nova;
+            if (nova) formCard.elements.nova_categoria.focus();
+        };
+        seletor.addEventListener("change", trocar);
+    }
     atualizarTotais();
 }
 function opcoesCartao(atual) {
-    const opcoes = [["", "Não somar"], ...listaCartoes()];
+    const opcoes = [["", "Não vincular"], ...listaCartoes()];
     return opcoes.map(([id, nome]) => `<option value="${id}" ${id === (atual || "") ? "selected" : ""}>${nome}</option>`).join("");
 }
 function tagCartao(codigo) {
@@ -347,31 +490,37 @@ function cardCategoria(grupo, row, entra, pagos) {
     const soAbertos = document.getElementById("soAbertos").checked;
     const campos = CAMPOS.filter(campo => campo.categoria === grupo.id && !(soAbertos && pagos.has(campo.id)));
     const sempre = grupo.id === "taxas";
-    const visiveis = campos.filter(campo => sempre || num(row[campo.id]) !== 0 || revelados.has(campo.id));
-    const escondidos = sempre ? [] : campos.filter(campo => num(row[campo.id]) === 0 && !revelados.has(campo.id));
+    const visiveis = campos.filter(campo => sempre || !campo.sistema || num(row[campo.id]) !== 0 || revelados.has(campo.id));
+    const escondidos = sempre ? [] : campos.filter(campo => !visiveis.includes(campo));
     const somaDentro = round2(campos.filter(campo => entra.has(campo.id)).reduce((acc, campo) => acc + num(row[campo.id]), 0));
     const somaFora = round2(campos.filter(campo => !entra.has(campo.id)).reduce((acc, campo) => acc + num(row[campo.id]), 0));
     const tudoFora = campos.length > 0 && campos.every(campo => !entra.has(campo.id));
     let meta = money(tudoFora ? somaFora : somaDentro);
     if (grupo.id === "cartoes") meta = money(round2(campos.reduce((acc, campo) => acc + valorFatura(row, campo.id), 0)));
-    else if (!tudoFora && somaFora) meta += ` · fora ${money(somaFora)}`;
+    else if (!tudoFora && somaFora) meta += ` · excluído ${money(somaFora)}`;
     const subtotal = grupo.id === "taxas"
-        ? `<div class="subtotal"><span>Subtotal do investimento</span><strong>${textoInvestimento(row.investimento)}</strong><small>Sai do salário e entra no total a pagar.</small></div>`
-        : "";
-    const adicionar = escondidos.length
-        ? `<div class="adicionar"><select data-mostrar="${grupo.id}">${escondidos.map(campo => `<option value="${campo.id}">${esc(campo.label)}</option>`).join("")}</select><button type="button" class="btn ghost" data-mostrar-btn="${grupo.id}">Adicionar linha</button></div>`
+        ? `<div class="subtotal"><span>Subtotal do investimento</span><strong>${textoInvestimento(row.investimento)}</strong><small>Deduzido do salário e incluído no total de despesas.</small></div>`
         : "";
     return `<section class="card cat cat-${grupo.id}" data-cat="${grupo.id}">
         <div class="card-head"><h3>${icone(grupo.icone)}${esc(grupo.label)}</h3><span class="meta">${meta}</span></div>
         <div class="card-body">
-            ${visiveis.map(campo => linhaCampo(campo, row, entra, pagos)).join("") || "<p class=\"meta\">Nada a pagar neste mês.</p>"}
+            ${visiveis.map(campo => linhaCampo(campo, row, entra, pagos)).join("")}
             ${subtotal}
-            ${adicionar}
-            ${formDoCard(grupo)}
+            ${formDoCard(grupo, escondidos)}
         </div>
+        ${rodapeLancamento(grupo.id)}
     </section>`;
 }
-function formDoCard(grupo) {
+function normalizarNome(texto) {
+    return String(texto || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim().toLowerCase();
+}
+function campoZerado(categoria, nome) {
+    const alvo = normalizarNome(nome);
+    if (!alvo) return null;
+    const row = rascunho || linhaSalva();
+    return CAMPOS.find(campo => campo.categoria === categoria && normalizarNome(campo.label) === alvo && num(row[campo.id]) === 0) || null;
+}
+function formDoCard(grupo, escondidos) {
     if (grupo.id === "cartoes") {
         const opcoes = listaCartoes().map(([id, nome]) => `<option value="${id}">${esc(nome)}</option>`).join("");
         return `<form class="form-linha form-linha-card" data-modo="fatura">
@@ -385,16 +534,18 @@ function formDoCard(grupo) {
                 <button class="btn" type="submit">Adicionar cartão</button>
             </form>`;
     }
-    if (!["pessoas", "variaveis", "assinaturas", "custo_fixo", "taxas"].includes(grupo.id)) return "";
     const dia = grupo.id === "assinaturas"
         ? `<label class="field"><span>Vence dia</span><input name="vencimento" inputmode="numeric" placeholder="opcional"></label>`
         : "";
     const cartao = grupo.id === "assinaturas"
         ? `<label class="field"><span>Somar na fatura</span><select name="cartao">${opcoesCartao("")}</select></label>`
         : "";
+    const lista = (escondidos || []).length
+        ? `<datalist id="dl_${grupo.id}">${escondidos.map(campo => `<option value="${esc(campo.label)}"></option>`).join("")}</datalist>`
+        : "";
     return `<form class="form-linha form-linha-card">
-        <label class="field"><span>Nome</span><input name="label" required maxlength="60" placeholder="Nome"></label>
-        <label class="field"><span>Valor deste mês</span><input name="valor" class="brl" inputmode="decimal" value="0,00"></label>
+        <label class="field"><span>Nome</span><input name="label" required maxlength="60" placeholder="Nome" ${lista ? `list="dl_${grupo.id}"` : ""}>${lista}</label>
+        <label class="field"><span>Valor do mês</span><input name="valor" class="brl" inputmode="decimal" value="0,00"></label>
         ${dia}
         ${cartao}
         <button class="btn" type="submit">Adicionar</button>
@@ -407,11 +558,11 @@ function linhaCampo(campo, row, entra, pagos) {
     const prazo = prazoTexto(campo, ativo, row.mes);
     const atrasado = prazo && prazo.cls.includes("late");
     const tags = [];
-    if (fora) tags.push('<span class="tag out">Fora do total</span>');
+    if (fora) tags.push('<span class="tag out">Excluído do total</span>');
     if (campo.categoria === "assinaturas") {
-        tags.push(tagCartao(campo.cartao) || '<span class="tag">Fora da fatura</span>');
+        tags.push(tagCartao(campo.cartao) || '<span class="tag">Sem cartão</span>');
     }
-    if (naFatura(campo)) tags.push('<span class="tag">Somada na fatura</span>');
+    if (naFatura(campo)) tags.push('<span class="tag">Incluída na fatura</span>');
     if (campo.id === "oliveira" && row.oliveira_calculado) tags.push('<span class="tag calc">Calculado</span>');
     if (prazo) tags.push(`<span class="${prazo.cls}">${esc(prazo.texto)}</span>`);
     const detalhe = formatarDetalhe((row.detalhes || {})[campo.id]);
@@ -419,7 +570,7 @@ function linhaCampo(campo, row, entra, pagos) {
     const bloqueado = campo.id === "oliveira" && row.oliveira_calculado ? "readonly" : "";
     const noTotal = entra.has(campo.id);
     const contaFatura = campo.categoria === "cartoes"
-        ? itensFatura(campo.id, row.mes).map(nota => `<p class="fatura-item"><span>${esc(nota.texto)}</span><strong>${money(nota.valor)}</strong><button type="button" class="lixo-inline" title="Apagar" aria-label="Apagar ${esc(nota.texto)}" data-nota-x="${nota.id}">${ICONE_LIXEIRA}</button></p>`).join("")
+        ? itensFatura(campo.id, row.mes).map(nota => `<p class="fatura-item"><span>${esc(nota.texto)}</span><strong>${money(nota.valor)}</strong><button type="button" class="lixo-inline" title="Excluir" aria-label="Excluir ${esc(nota.texto)}" data-nota-x="${nota.id}">${ICONE_LIXEIRA}</button></p>`).join("")
         : "";
     return `<div class="row ${fora ? "fora" : ""} ${ativo ? "is-pago" : ""} ${atrasado ? "atrasado" : ""}">
         <div class="linha-nome">
@@ -433,12 +584,11 @@ function linhaCampo(campo, row, entra, pagos) {
             ${campo.categoria === "assinaturas"
                 ? ""
                 : sempreTotal
-                    ? `<span class="tag">Entra no total</span>`
-                    : `<button type="button" class="mini ${noTotal ? "on" : ""}" data-entra="${campo.id}">${noTotal ? "No total" : "Fora do total"}</button>`}
-            <button type="button" class="mini" data-repetir="${campo.id}">Repetir até dezembro</button>
+                    ? `<span class="tag ok" title="Este valor compõe o total de despesas do mês.">Incluído no total</span>`
+                    : `<button type="button" class="mini ${noTotal ? "on" : ""}" data-entra="${campo.id}">${noTotal ? "Incluído no total" : "Excluído do total"}</button>`}
             <button type="button" class="mini" data-renomear="${campo.id}">Renomear</button>
             ${campo.categoria === "assinaturas" ? `<label class="mini-cartao">Somar na fatura<select data-cartao="${campo.id}">${opcoesCartao(campo.cartao)}</select></label>` : ""}
-            <button type="button" class="mini icone-btn" title="Apagar" aria-label="Apagar ${esc(campo.label)}" ${campo.sistema ? `data-ocultar="${campo.id}"` : `data-excluir="${campo.id}"`}>${ICONE_LIXEIRA}</button>
+            <button type="button" class="mini icone-btn" title="${campo.sistema ? "Ocultar" : "Excluir"}" aria-label="${campo.sistema ? "Ocultar" : "Excluir"} ${esc(campo.label)}" ${campo.sistema ? `data-ocultar="${campo.id}"` : `data-excluir="${campo.id}"`}>${ICONE_LIXEIRA}</button>
         </div>
     </div>`;
 }
@@ -467,21 +617,24 @@ function renderNotas(mes) {
         <form id="formNota" class="form-linha">
             <input type="hidden" name="notaId" value="">
             <label class="field"><span>Texto</span><input name="texto" required maxlength="400"></label>
-            <label class="field"><span>Apelido do total</span><input name="apelido" maxlength="80" placeholder="Ex.: Nubank"></label>
+            <label class="field"><span>Grupo (opcional)</span><input name="apelido" maxlength="80" placeholder="Ex.: Nubank"></label>
             <label class="field"><span>Valor</span><input name="valor" class="brl" inputmode="decimal" value="0,00"></label>
             <button class="btn ghost" type="submit">Salvar anotação</button>
         </form>
     </div></section>`;
 }
 function renderNovoCard() {
-    const opcoes = CATEGORIAS.map(cat => `<option value="${cat.id}">${esc(cat.label)}</option>`).join("");
+    const opcoes = CATEGORIAS.map(cat => `<option value="${cat.id}">${esc(cat.label)}</option>`).join("")
+        + '<option value="__nova__">+ Nova categoria...</option>';
     return `<section class="card cat cat-novo"><div class="card-head"><h3>Novo card</h3></div><div class="card-body">
         <form id="formCard" class="form-linha">
             <label class="field"><span>Nome</span><input name="label" required maxlength="60"></label>
             <label class="field"><span>Categoria</span><select name="categoria">${opcoes}</select></label>
+            <label class="field hidden" data-nova-categoria><span>Nome da categoria</span><input name="nova_categoria" maxlength="40" placeholder="Ex.: Educação"></label>
+            <label class="field"><span>Valor do mês</span><input name="valor" class="brl" inputmode="decimal" value="0,00"></label>
             <label class="field"><span>Vence dia</span><input name="vencimento" inputmode="numeric" placeholder="opcional"></label>
             <label class="field"><span>Cartão</span><select name="cartao">${opcoesCartao("")}</select></label>
-            <label class="check"><input type="checkbox" name="entra" checked> Entra no total</label>
+            <label class="check"><input type="checkbox" name="entra" checked> Incluir no total de despesas</label>
             <button class="btn" type="submit">Adicionar</button>
         </form>
     </div></section>`;
@@ -500,22 +653,22 @@ function atualizarTotais() {
     const sobra = conta.sobra;
     document.getElementById("kpis").innerHTML = [
         ["Salário", money(conta.salario), ""],
-        ["Total a pagar", money(conta.total), ""],
-        ["Valor já pago", money(conta.pago), "pos"],
-        ["Faltante", money(faltante), faltante > 0 ? "warn" : ""],
-        ["Sobra", money(sobra), sobra >= 0 ? "pos" : "neg"]
+        ["Total de despesas", money(conta.total), ""],
+        ["Total pago", money(conta.pago), "pos"],
+        ["Pendente", money(faltante), faltante > 0 ? "warn" : ""],
+        ["Saldo do mês", money(sobra), sobra >= 0 ? "pos" : "neg"]
     ].map(([rotulo, valor, classe]) => `<article class="kpi"><label>${rotulo}</label><strong class="${classe}">${valor}</strong></article>`).join("");
     const chip = document.getElementById("chipFora");
-    const htmlChip = conta.fora > 0 ? `<div class="chip" id="chipFora">Fora do total, ainda em aberto: <strong>${money(conta.fora)}</strong></div>` : "";
+    const htmlChip = conta.fora > 0 ? `<div class="chip" id="chipFora">Excluído do total e pendente: <strong>${money(conta.fora)}</strong></div>` : "";
     if (chip) chip.outerHTML = htmlChip;
     else if (htmlChip) document.getElementById("kpis").insertAdjacentHTML("afterend", htmlChip);
     const caixa = document.getElementById("totais");
     if (caixa) {
         caixa.innerHTML = `
-            <div>Já pago no total<strong class="pos">${money(conta.pago)}</strong></div>
-            <div>Faltante do total<strong class="${faltante > 0 ? "warn" : ""}">${money(faltante)}</strong></div>
-            <div>Sobra do salário<strong class="${sobra >= 0 ? "pos" : "neg"}">${money(sobra)}</strong></div>
-            <p class="conta-regra">O total a pagar é o que sai do salário. A sobra é o que resta. O que está ligado a um cartão entra na fatura.</p>`;
+            <div>Total pago<strong class="pos">${money(conta.pago)}</strong></div>
+            <div>Total pendente<strong class="${faltante > 0 ? "warn" : ""}">${money(faltante)}</strong></div>
+            <div>Saldo do mês<strong class="${sobra >= 0 ? "pos" : "neg"}">${money(sobra)}</strong></div>
+            <p class="conta-regra">O total de despesas é o valor descontado do salário e o saldo é a diferença entre os dois. Itens vinculados a um cartão são somados na fatura.</p>`;
     }
     CATEGORIAS.forEach(grupo => {
         const card = document.querySelector(`#viewContabilidade .card[data-cat="${grupo.id}"]`);
@@ -526,7 +679,7 @@ function atualizarTotais() {
         const somaFora = round2(campos.filter(campo => !entra.has(campo.id)).reduce((acc, campo) => acc + num(document.getElementById("c_" + campo.id)?.value), 0));
         const tudoFora = campos.every(campo => !entra.has(campo.id));
         let meta = money(tudoFora ? somaFora : somaDentro);
-        if (!tudoFora && somaFora) meta += ` · fora ${money(somaFora)}`;
+        if (!tudoFora && somaFora) meta += ` · excluído ${money(somaFora)}`;
         if (grupo.id === "cartoes") meta = money(round2(campos.reduce((acc, campo) => acc + valorFatura(row, campo.id), 0)));
         const destino = card.querySelector(".card-head .meta");
         if (destino) destino.textContent = meta;
@@ -547,19 +700,26 @@ function ligarBrl(input) {
     });
     input.addEventListener("input", () => {
         if (view === "contabilidade") lembrar();
-        else if (input.closest("[data-emp]")) {
-            recalcularEmp(input.closest("[data-emp]"));
-            sujo = true;
-        } else if (view === "emprestimos") {
-            sujo = true;
-        }
+        else if (input.id === "c_emprestimo_nu") guardarNu();
+        else if (input.closest("[data-emp]")) recalcularEmp(input.closest("[data-emp]"));
     });
+}
+function ligarBrlForm(input) {
+    input.addEventListener("focus", () => {
+        const valor = num(input.value);
+        input.value = valor ? String(valor).replace(".", ",") : "";
+    });
+    input.addEventListener("blur", () => {
+        input.value = fmtBrl(num(input.value));
+        atualizarRodapes();
+    });
+    input.addEventListener("input", atualizarRodapes);
 }
 function alternarPago(botao) {
     const ativo = !botao.classList.contains("on");
     botao.classList.toggle("on", ativo);
     botao.setAttribute("aria-pressed", String(ativo));
-    botao.textContent = ativo ? "Pago" : "Em aberto";
+    botao.textContent = ativo ? "Pago" : "Pendente";
     const linha = botao.closest(".row") || botao.closest("tr");
     if (linha) linha.classList.toggle("is-pago", ativo);
 }
@@ -568,7 +728,7 @@ function renderEmp() {
     const mes = mesAtual();
     const cat = document.getElementById("filtroCat").value;
     const numeros = cat === "todas" ? [1, 2] : [Number(cat)];
-    document.getElementById("viewEmprestimos").innerHTML = `<p class="conta-regra">Estes dois empréstimos já formam o valor de Oliveira em Lançamentos. Eles não entram de novo no total a pagar. Empréstimo Nu entra à parte.</p>`
+    document.getElementById("viewEmprestimos").innerHTML = `<p class="conta-regra">As parcelas dos empréstimos 1 e 2 compõem o valor de Oliveira em Lançamentos e não são somadas novamente ao total de despesas. O empréstimo Nu é somado separadamente.</p>`
         + numeros.map(numero => cardEmp(numero, mes)).join("")
         + cardNu(mes)
         + renderHistorico()
@@ -576,58 +736,76 @@ function renderEmp() {
     document.querySelectorAll("#viewEmprestimos input.brl").forEach(ligarBrl);
     document.querySelectorAll("#viewEmprestimos .card[data-emp]").forEach(ligarCardEmp);
     document.querySelectorAll("[data-quitar]").forEach(botao => botao.addEventListener("click", () => quitarEmp(Number(botao.dataset.quitar))));
+    document.querySelectorAll("[data-salvar-emp]").forEach(botao => botao.addEventListener("click", () => salvarEmpCard(botao.dataset.salvarEmp, botao)));
+    document.querySelectorAll("[data-desfazer-emp]").forEach(botao => botao.addEventListener("click", () => desfazerEmp(botao.dataset.desfazerEmp)));
     const nuPago = document.querySelector('[data-role="nu-pago"]');
     if (nuPago) nuPago.addEventListener("click", () => {
         alternarPago(nuPago);
-        sujo = true;
+        guardarNu();
     });
+    const salvarNuBtn = document.querySelector("[data-salvar-nu]");
+    if (salvarNuBtn) salvarNuBtn.addEventListener("click", () => salvarNu(salvarNuBtn));
+    const desfazerNuBtn = document.querySelector("[data-desfazer-nu]");
+    if (desfazerNuBtn) desfazerNuBtn.addEventListener("click", desfazerNu);
     atualizarKpiEmp();
+    atualizarBotoesEmp();
 }
 function cardEmp(numero, mes) {
     const lista = (dados.emprestimos || []).filter(item => Number(item.emprestimo) === numero).sort((a, b) => a.mes.localeCompare(b.mes));
     const original = lista.length ? Number(lista[0].saldo_inicio) || 0 : 0;
     const atual = lista.find(item => item.mes === mes);
     const saldo = atual ? Number(atual.saldo_inicio) || 0 : 0;
-    const pagamento = atual ? Number(atual.pagamento) || 0 : 0;
+    const pagamentoSalvo = atual ? Number(atual.pagamento) || 0 : 0;
+    const draft = rascunhoEmp[String(numero)];
+    const pagamento = draft ? num(draft.pagamento) : pagamentoSalvo;
     const previsto = atual ? Number(atual.pagamento_previsto ?? atual.pagamento) || 0 : 0;
-    const pago = atual ? Boolean(atual.pago) : false;
+    const pago = draft ? Boolean(draft.pago) : (atual ? Boolean(atual.pago) : false);
     const juros = round2(saldo * 0.02);
     const seguinte = lista.find(item => item.mes > mes);
     const referencia = seguinte
-        ? `Em ${mesFull(seguinte.mes)} o saldo começa em ${money(seguinte.saldo_inicio)}.`
+        ? `Saldo inicial em ${mesFull(seguinte.mes)}: ${money(seguinte.saldo_inicio)}.`
         : "Última parcela deste empréstimo.";
-    return `<section class="card cat cat-emp${numero}" data-emp="${numero}" data-original="${original}" data-pagamento="${pagamento}" data-previsto="${previsto}" data-saldo="${saldo}">
-        <div class="card-head"><h3>Empréstimo ${numero}</h3><span class="meta">Começou em ${money(original)}</span></div>
+    return `<section class="card cat cat-emp${numero}" data-emp="${numero}" data-original="${original}" data-pagamento="${pagamentoSalvo}" data-previsto="${previsto}" data-saldo="${saldo}">
+        <div class="card-head"><h3>Empréstimo ${numero}</h3><span class="meta">Valor inicial: ${money(original)}</span></div>
         <div class="card-body">
             <div class="resumo-emp">
-                <div><span>Saldo deste mês</span><strong>${money(saldo)}</strong></div>
-                <div><span>Parcela que paga</span><strong>${money(previsto)}</strong></div>
-                <div><span>Juros 2%</span><strong class="juros">${money(juros)}</strong></div>
-                <div><span>Ainda fica para pagar</span><strong class="fim">${money(round2(Math.max(0, saldo - pagamento)))}</strong></div>
+                <div><span>Saldo devedor</span><strong>${money(saldo)}</strong></div>
+                <div><span>Parcela prevista</span><strong>${money(previsto)}</strong></div>
+                <div><span>Juros (2%)</span><strong class="juros">${money(juros)}</strong></div>
+                <div><span>Saldo após o pagamento</span><strong class="fim">${money(round2(Math.max(0, saldo - pagamento)))}</strong></div>
             </div>
             <p class="meta ref-mes">${referencia}</p>
             <div class="row simple">
                 <div>
-                    <label>Valor pago neste mês</label>
-                    <div class="meta">A parcela definida é ${money(previsto)}. Se pagar outro valor, o que fica e o mês seguinte são recalculados.</div>
-                    <p class="aviso-parcela" hidden>Ao salvar, o saldo dos próximos meses acompanha este pagamento.</p>
+                    <label>Valor pago no mês</label>
+                    <div class="meta">Parcela prevista: ${money(previsto)}. Ao informar outro valor, o saldo e os meses seguintes são recalculados.</div>
+                    <p class="aviso-parcela" hidden>Ao salvar, os saldos dos meses seguintes serão recalculados.</p>
                 </div>
                 ${brlCampo("pag", pagamento)}
             </div>
             <div class="row simple ${pago ? "is-pago" : ""}"><div><label>Situação</label></div>${pagoBtn(pago, 'data-role="card-pago"')}</div>
-            ${saldo > 0 ? `<button type="button" class="btn" data-quitar="${numero}">Quitar empréstimo</button>` : '<p class="meta">Quitado. Os meses seguintes ficam com saldo zerado.</p>'}
+            ${saldo > 0 ? `<button type="button" class="btn" data-quitar="${numero}">Quitar empréstimo</button>` : '<p class="meta">Empréstimo quitado. Os meses seguintes permanecem com saldo zerado.</p>'}
             <input type="hidden" class="saldo" value="${fmtBrl(saldo)}">
         </div>
         <div class="evo"><table>
-            <thead><tr><th>Mês</th><th class="num">Saldo</th><th class="num">Juros</th><th class="num">Parcela</th><th class="num">Saldo fim</th><th>Status</th></tr></thead>
-            <tbody>${lista.map(item => `<tr class="${item.mes === mes ? "atual" : ""} ${item.pago ? "is-pago" : ""}" data-id="${item.id || ""}" data-mes="${item.mes}" data-emp="${numero}">
+            <thead><tr><th>Mês</th><th class="num">Saldo inicial</th><th class="num">Juros</th><th class="num">Parcela</th><th class="num">Saldo final</th><th>Situação</th></tr></thead>
+            <tbody>${lista.map(item => {
+                const pagoLinha = draft && draft.linhas && Object.prototype.hasOwnProperty.call(draft.linhas, String(item.id))
+                    ? draft.linhas[String(item.id)]
+                    : Boolean(item.pago);
+                return `<tr class="${item.mes === mes ? "atual" : ""} ${pagoLinha ? "is-pago" : ""}" data-id="${item.id || ""}" data-mes="${item.mes}" data-emp="${numero}">
                 <td>${mesFull(item.mes)}</td><td class="num">${money(item.saldo_inicio)}</td><td class="num">${money(item.juros)}</td>
                 <td class="num">${money(item.pagamento)}</td><td class="num">${money(item.saldo_fim)}</td>
-                <td>${pagoBtn(Boolean(item.pago), 'data-role="row-pago"')}</td>
-            </tr>`).join("")}</tbody>
+                <td>${pagoBtn(pagoLinha, 'data-role="row-pago"')}</td>
+            </tr>`;
+            }).join("")}</tbody>
         </table></div>
         <input type="hidden" class="emp-id" value="${atual && atual.id ? atual.id : ""}">
         <input type="hidden" class="emp-n" value="${numero}">
+        <div class="card-foot">
+            <button type="button" class="btn ghost ${draft ? "" : "hidden"}" data-desfazer-emp="${numero}">Desfazer</button>
+            <button type="button" class="btn" data-salvar-emp="${numero}" ${draft ? "" : "disabled"}>Salvar</button>
+        </div>
     </section>`;
 }
 function nuSemPendencia(mes) {
@@ -640,12 +818,18 @@ function cardNu(mes) {
     const campo = CAMPOS.find(item => item.id === "emprestimo_nu");
     const info = nuSemPendencia(mes);
     if (!campo || !info.pendente) return "";
+    const valor = rascunhoNu ? rascunhoNu.valor : info.row.emprestimo_nu;
+    const pago = rascunhoNu ? rascunhoNu.pago : false;
     return `<section class="card cat cat-nu">
         <div class="card-head"><h3>Empréstimo Nu</h3><span class="meta">Parcela do mês</span></div>
         <div class="card-body">
-            <p class="meta">Parcela do Nu. Entra no total a pagar e fica separada dos dois empréstimos.</p>
-            <div class="row simple"><div><label>Valor deste mês</label></div>${brlInput("c_emprestimo_nu", info.row.emprestimo_nu)}</div>
-            <div class="row simple"><div><label>Situação</label></div>${pagoBtn(false, 'data-role="nu-pago"')}</div>
+            <p class="meta">Parcela do empréstimo Nu, incluída no total de despesas e separada dos empréstimos 1 e 2.</p>
+            <div class="row simple"><div><label>Valor do mês</label></div>${brlInput("c_emprestimo_nu", valor)}</div>
+            <div class="row simple ${pago ? "is-pago" : ""}"><div><label>Situação</label></div>${pagoBtn(pago, 'data-role="nu-pago"')}</div>
+        </div>
+        <div class="card-foot">
+            <button type="button" class="btn ghost ${rascunhoNu ? "" : "hidden"}" data-desfazer-nu="1">Desfazer</button>
+            <button type="button" class="btn" data-salvar-nu="1" ${rascunhoNu ? "" : "disabled"}>Salvar</button>
         </div>
     </section>`;
 }
@@ -656,8 +840,7 @@ function ligarCardEmp(card) {
         const linha = card.querySelector(`tr[data-mes="${mesAtual()}"]`);
         const botao = linha && linha.querySelector('[data-role="row-pago"]');
         if (botao && botao.classList.contains("on") !== pagoCard.classList.contains("on")) alternarPago(botao);
-        sujo = true;
-        atualizarKpiEmp();
+        guardarEmpEditados();
     });
     card.querySelectorAll('[data-role="row-pago"]').forEach(botao => {
         botao.addEventListener("click", () => {
@@ -666,8 +849,7 @@ function ligarCardEmp(card) {
             if (linha && linha.dataset.mes === mesAtual() && pagoCard && pagoCard.classList.contains("on") !== botao.classList.contains("on")) {
                 alternarPago(pagoCard);
             }
-            sujo = true;
-            atualizarKpiEmp();
+            guardarEmpEditados();
         });
     });
     recalcularEmp(card);
@@ -680,23 +862,78 @@ function recalcularEmp(card) {
     card.querySelector(".fim").textContent = money(round2(Math.max(0, saldo - pagamento)));
     const aviso = card.querySelector(".aviso-parcela");
     if (aviso) aviso.hidden = Math.abs(pagamento - num(card.dataset.previsto)) < 0.01;
+    guardarEmpEditados();
     atualizarKpiEmp();
+}
+function empAlteradoNumero(numero) {
+    const draft = rascunhoEmp[String(numero)];
+    if (!draft) return false;
+    const atual = (dados.emprestimos || []).find(item => item.mes === mesAtual() && Number(item.emprestimo) === Number(numero));
+    if (!atual) return true;
+    if (Math.abs(num(draft.pagamento) - num(atual.pagamento)) > 0.009) return true;
+    if (Boolean(draft.pago) !== Boolean(atual.pago)) return true;
+    return Object.entries(draft.linhas || {}).some(([id, pago]) => {
+        const item = (dados.emprestimos || []).find(emp => String(emp.id) === String(id));
+        return item && Boolean(item.pago) !== Boolean(pago);
+    });
+}
+function guardarEmpEditados() {
+    document.querySelectorAll("#viewEmprestimos .card[data-emp]").forEach(card => {
+        const numero = String(card.dataset.emp);
+        rascunhoEmp[numero] = {
+            pagamento: num(card.querySelector(".pag")?.value),
+            pago: Boolean(card.querySelector('[data-role="card-pago"]')?.classList.contains("on")),
+            linhas: Object.fromEntries([...card.querySelectorAll("tr[data-id]")].map(linha => [
+                linha.dataset.id,
+                Boolean(linha.querySelector('[data-role="row-pago"]')?.classList.contains("on"))
+            ]))
+        };
+        if (!empAlteradoNumero(numero)) delete rascunhoEmp[numero];
+    });
+    sujo = temPendente();
+    atualizarBotoesEmp();
+}
+function guardarNu() {
+    const campo = document.getElementById("c_emprestimo_nu");
+    const botao = document.querySelector('[data-role="nu-pago"]');
+    if (!campo || !botao) return;
+    const info = nuSemPendencia(mesAtual());
+    const valor = num(campo.value);
+    const pago = botao.classList.contains("on");
+    if (Math.abs(valor - num(info.valor)) > 0.009 || pago !== Boolean(info.pago)) rascunhoNu = { valor, pago };
+    else rascunhoNu = null;
+    sujo = temPendente();
+    atualizarBotoesEmp();
+    atualizarKpiEmp();
+}
+function atualizarBotoesEmp() {
+    document.querySelectorAll("[data-salvar-emp]").forEach(botao => {
+        const alterado = empAlteradoNumero(botao.dataset.salvarEmp);
+        if (!botao.classList.contains("is-busy")) botao.disabled = !alterado;
+        const desfazer = botao.parentElement.querySelector("[data-desfazer-emp]");
+        if (desfazer) desfazer.classList.toggle("hidden", !alterado);
+    });
+    const salvarNuBtn = document.querySelector("[data-salvar-nu]");
+    if (salvarNuBtn && !salvarNuBtn.classList.contains("is-busy")) salvarNuBtn.disabled = !rascunhoNu;
+    const desfazerNuBtn = document.querySelector("[data-desfazer-nu]");
+    if (desfazerNuBtn) desfazerNuBtn.classList.toggle("hidden", !rascunhoNu);
 }
 function atualizarKpiEmp() {
     if (view !== "emprestimos") return;
     const cards = [...document.querySelectorAll("#viewEmprestimos .card[data-emp]")];
     const pagamento = cards.reduce((acc, card) => acc + num(card.querySelector(".pag")?.value), 0);
     const juros = cards.reduce((acc, card) => acc + round2(num(card.querySelector(".saldo")?.value) * 0.02), 0);
+    const infoNu = nuSemPendencia(mesAtual());
     const campoNu = document.getElementById("c_emprestimo_nu");
-    const nu = campoNu ? num(campoNu.value) : num(nuSemPendencia(mesAtual()).valor);
-    const totalMes = round2(pagamento + juros + nu);
-    document.getElementById("kpis").innerHTML = [
-        ["Total a pagar no mês", money(totalMes), ""],
+    const nu = infoNu.pendente ? (campoNu ? num(campoNu.value) : num(infoNu.valor)) : 0;
+    const blocos = [
+        ["Total do mês", money(round2(pagamento + juros + nu)), ""],
         ["Parcelas", money(pagamento), ""],
         ["Juros", money(juros), ""],
-        ["Empréstimos", money(round2(pagamento + juros)), ""],
-        ["Empréstimo Nu", money(nu), ""]
-    ].map(([rotulo, valor, classe]) => `<article class="kpi"><label>${rotulo}</label><strong class="${classe}">${valor}</strong></article>`).join("");
+        ["Empréstimos", money(round2(pagamento + juros)), ""]
+    ];
+    if (infoNu.pendente) blocos.push(["Empréstimo Nu", money(nu), ""]);
+    document.getElementById("kpis").innerHTML = blocos.map(([rotulo, valor, classe]) => `<article class="kpi"><label>${rotulo}</label><strong class="${classe}">${valor}</strong></article>`).join("");
     const chip = document.getElementById("chipFora");
     if (chip) chip.remove();
 }
@@ -704,7 +941,7 @@ function renderHistorico() {
     const info = nuSemPendencia(mesAtual());
     const lista = [...(dados.historico || [])];
     if (!info.pendente && info.valor > 0) {
-        lista.push({ texto: `Empréstimo Nu de ${mesFull(mesAtual())} pago.`, valor: info.valor });
+        lista.push({ texto: `Parcela do empréstimo Nu de ${mesFull(mesAtual())} paga.`, valor: info.valor });
     }
     if (!lista.length) return "";
     return `<section class="card cat cat-historico"><div class="card-head"><h3>Histórico</h3></div><div class="card-body">${lista.map(item =>
@@ -712,18 +949,16 @@ function renderHistorico() {
     ).join("")}</div></section>`;
 }
 async function quitarEmp(numero) {
-    if (sujo) {
-        showBanner("Salve o mês antes de quitar o empréstimo.");
+    if (temPendente()) {
+        showBanner("Salve as alterações deste empréstimo antes de quitar.");
         return;
     }
-    if (!confirm(`Quitar o empréstimo ${numero} em ${mesFull(mesAtual())}? O saldo restante entra como pago e os meses seguintes ficam zerados.`)) return;
+    if (!confirm(`Quitar o empréstimo ${numero} em ${mesFull(mesAtual())}? O saldo restante será registrado como pago e os meses seguintes ficarão zerados.`)) return;
     setStatus("load", "Quitando...");
     try {
         dados = await post("/api/emprestimo/quitar", { mes: mesAtual(), emprestimo: numero });
         CAMPOS = dados.campos || CAMPOS;
-        rascunho = null;
-        sujo = false;
-        historico = [];
+        limparRascunhos();
         setStatus("ok", "Empréstimo quitado");
         showBanner((dados.avisos || []).join(" "));
         render();
@@ -731,25 +966,6 @@ async function quitarEmp(numero) {
         setStatus("err", "Falha ao quitar");
         showBanner(erro.message);
     }
-}
-function marcarOliveira() {
-    const mes = mesAtual();
-    document.querySelectorAll("#viewEmprestimos .card[data-emp]").forEach(card => {
-        const numero = Number(card.querySelector(".emp-n").value);
-        const item = (dados.emprestimos || []).find(linha => linha.mes === mes && Number(linha.emprestimo) === numero);
-        if (item) item.pago = card.querySelector('[data-role="card-pago"]')?.classList.contains("on");
-    });
-    document.querySelectorAll('#viewEmprestimos tr[data-id]').forEach(linha => {
-        const item = (dados.emprestimos || []).find(emp => String(emp.id) === linha.dataset.id);
-        if (item) item.pago = linha.querySelector('[data-role="row-pago"]')?.classList.contains("on");
-    });
-    const doMes = (dados.emprestimos || []).filter(item => item.mes === mes && num(item.pagamento) > 0);
-    const row = (dados.contabilidade || []).find(item => item.mes === mes);
-    if (!row || !doMes.length) return;
-    const pagos = new Set(listaPagos(row));
-    if (doMes.every(item => item.pago)) pagos.add("oliveira");
-    else pagos.delete("oliveira");
-    row.itens_pagos = [...pagos];
 }
 function coletarEmprestimos() {
     const mes = mesAtual();
@@ -795,81 +1011,240 @@ function validarAntesDeSalvar() {
     return "";
 }
 
-async function salvarAtual() {
-    const erro = validarAntesDeSalvar();
-    if (erro) {
-        showBanner(erro);
+function ligarRodapes() {
+    document.querySelectorAll("[data-desfazer-cat]").forEach(botao => {
+        botao.addEventListener("click", () => desfazerCard(botao.dataset.desfazerCat));
+    });
+    document.querySelectorAll("[data-salvar-cat]").forEach(botao => {
+        botao.addEventListener("click", () => salvarCard(botao.dataset.salvarCat, botao));
+    });
+    document.querySelectorAll("#viewContabilidade .card[data-cat] form input, #viewContabilidade .card[data-cat] form select").forEach(campo => {
+        if (campo.classList.contains("brl")) return;
+        campo.addEventListener("input", atualizarRodapes);
+    });
+}
+function desfazerCard(catId) {
+    const salvo = linhaSalva();
+    const row = coletarMes();
+    if (catId === "receita") row.salario = num(salvo.salario);
+    else {
+        const ids = idsDoCard(catId);
+        ids.forEach(id => { row[id] = num(salvo[id]); });
+        const pagos = new Set(row.itens_pagos || []);
+        const pagosSalvos = new Set(salvo.itens_pagos || []);
+        ids.forEach(id => { if (pagosSalvos.has(id)) pagos.add(id); else pagos.delete(id); });
+        row.itens_pagos = [...pagos];
+        const entra = new Set(row.entra && row.entra.length ? row.entra : idsEntra(row));
+        const entraSalva = new Set(idsEntra(salvo));
+        ids.forEach(id => { if (entraSalva.has(id)) entra.add(id); else entra.delete(id); });
+        row.entra = CAMPOS.map(campo => campo.id).filter(id => entra.has(id));
+    }
+    normalizarRascunho(row);
+    render();
+}
+async function gravarForms(card) {
+    const cat = card.dataset.cat;
+    let mudou = false;
+    for (const form of card.querySelectorAll("form.form-linha-card")) {
+        const label = (form.elements.label?.value || "").trim();
+        const valor = form.elements.valor ? num(form.elements.valor.value) : 0;
+        if (!label && valor <= 0) continue;
+        mudou = true;
+        if (form.dataset.modo === "fatura") {
+            if (!label || valor <= 0) throw new Error("Informe a descrição e o valor para somar na fatura.");
+            dados = await post("/api/observacao", {
+                mes: mesAtual(),
+                texto: label,
+                apelido: form.elements.cartao.value,
+                valor,
+                tipo: "fatura"
+            });
+            continue;
+        }
+        if (!label) throw new Error("Informe o nome para adicionar.");
+        const existente = campoZerado(cat, label);
+        if (existente) {
+            if (valor <= 0) throw new Error("Informe um valor maior que zero.");
+            dados = await post("/api/contabilidade", { mes: mesAtual(), [existente.id]: valor });
+            continue;
+        }
+        dados = await post("/api/cards", {
+            label,
+            categoria: cat,
+            cartao: form.elements.cartao ? form.elements.cartao.value : "",
+            vencimento: form.elements.vencimento ? form.elements.vencimento.value : "",
+            valor,
+            mes: mesAtual(),
+            entra_padrao: true
+        });
+    }
+    if (mudou) {
+        CAMPOS = dados.campos || CAMPOS;
+        CATEGORIAS = dados.categorias || CATEGORIAS;
+    }
+}
+async function salvarCard(catId, botao) {
+    const card = document.querySelector(`#viewContabilidade [data-cat="${catId}"]`);
+    const atual = coletarMes();
+    if (catId === "receita" && num(atual.salario) < 0) {
+        showBanner("Salário não pode ser negativo.");
         return;
     }
-    const botao = document.getElementById("btnSalvar");
-    botao.disabled = true;
+    const invalido = CAMPOS.find(campo => idsDoCard(catId).includes(campo.id) && num(atual[campo.id]) < 0);
+    if (invalido) {
+        showBanner(`${invalido.label} não pode ser negativo.`);
+        return;
+    }
+    const alterado = cardDifere(catId, atual, linhaSalva());
+    if (!alterado && !formPendente(card)) return;
+    ocupar(botao, true);
     setStatus("load", "Salvando...");
     try {
-        let avisos = [];
-        if (view === "contabilidade") {
-            dados = await api("/api/contabilidade", {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify(coletarMes())
-            });
-        } else {
-            marcarOliveira();
-            const mes = mesAtual();
-            const linhaLocal = (dados.contabilidade || []).find(item => item.mes === mes);
-            const nuBotao = document.querySelector('[data-role="nu-pago"]');
-            const nuInput = document.getElementById("c_emprestimo_nu");
-            if (linhaLocal && nuBotao) {
-                const pagosNu = new Set(listaPagos(linhaLocal));
-                if (nuBotao.classList.contains("on")) pagosNu.add("emprestimo_nu");
-                else pagosNu.delete("emprestimo_nu");
-                linhaLocal.itens_pagos = [...pagosNu];
-            }
-            const pagosDesejados = listaPagos(linhaLocal || {});
-            dados = await api("/api/emprestimos/lote", {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ emprestimos: coletarEmprestimos() })
-            });
-            avisos = dados.avisos || [];
-            const row = (dados.contabilidade || []).find(item => item.mes === mes) || {};
-            const payload = { mes, salario: num(row.salario), itens_pagos: pagosDesejados };
-            CAMPOS.forEach(campo => { payload[campo.id] = num(row[campo.id]); });
-            if (nuInput) payload.emprestimo_nu = num(nuInput.value);
+        const payload = alterado ? payloadDoCard(catId) : null;
+        const manter = snapshotOutros(catId);
+        if (formPendente(card)) await gravarForms(card);
+        if (payload) {
             dados = await api("/api/contabilidade", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify(payload)
             });
+            CAMPOS = dados.campos || CAMPOS;
+            CATEGORIAS = dados.categorias || CATEGORIAS;
         }
-        sujo = false;
-        rascunho = null;
+        reaplicarOutros(manter);
         setStatus("ok", "Alterações salvas");
-        showBanner(avisos.join(" "), avisos.length ? "warn" : "");
+        showBanner("");
         preencherFiltros();
         render();
     } catch (erroSalvar) {
         setStatus("err", "Falha ao salvar");
         showBanner(erroSalvar.message);
-    } finally {
-        botao.disabled = false;
+        ocupar(botao, false);
+        atualizarRodapes();
     }
+}
+function oliveiraPagoPayload(base) {
+    const mes = mesAtual();
+    const doMes = (base.emprestimos || []).filter(item => item.mes === mes && num(item.pagamento) > 0);
+    const row = (base.contabilidade || []).find(item => item.mes === mes);
+    if (!row || !doMes.length) return null;
+    const pagos = new Set(listaPagos(row));
+    const deve = doMes.every(item => item.pago);
+    if (deve === pagos.has("oliveira")) return null;
+    if (deve) pagos.add("oliveira");
+    else pagos.delete("oliveira");
+    return { mes, itens_pagos: [...pagos] };
+}
+async function salvarEmpCard(numero, botao) {
+    const card = document.querySelector(`#viewEmprestimos .card[data-emp="${numero}"]`);
+    if (!card) return;
+    const pagamento = num(card.querySelector(".pag").value);
+    const saldo = num(card.querySelector(".saldo").value);
+    if (pagamento < 0) {
+        showBanner("O pagamento não pode ser negativo.");
+        return;
+    }
+    if (pagamento > saldo) {
+        showBanner(`No empréstimo ${numero}, o pagamento não pode passar do saldo.`);
+        return;
+    }
+    ocupar(botao, true);
+    setStatus("load", "Salvando...");
+    try {
+        guardarEmpEditados();
+        const lista = coletarEmprestimos().filter(item => item.emprestimo === Number(numero));
+        dados = await api("/api/emprestimos/lote", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ emprestimos: lista })
+        });
+        const avisos = dados.avisos || [];
+        const ajuste = oliveiraPagoPayload(dados);
+        if (ajuste) {
+            dados = await api("/api/contabilidade", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify(ajuste)
+            });
+        }
+        delete rascunhoEmp[String(numero)];
+        sujo = temPendente();
+        setStatus("ok", "Alterações salvas");
+        showBanner(avisos.join(" "), avisos.length ? "warn" : "");
+        render();
+    } catch (erroSalvar) {
+        setStatus("err", "Falha ao salvar");
+        showBanner(erroSalvar.message);
+        ocupar(botao, false);
+        atualizarBotoesEmp();
+    }
+}
+async function salvarNu(botao) {
+    const campo = document.getElementById("c_emprestimo_nu");
+    if (!campo) return;
+    if (num(campo.value) < 0) {
+        showBanner("Empréstimo Nu não pode ser negativo.");
+        return;
+    }
+    ocupar(botao, true);
+    setStatus("load", "Salvando...");
+    try {
+        const info = nuSemPendencia(mesAtual());
+        const pagos = new Set(listaPagos(info.row));
+        if (document.querySelector('[data-role="nu-pago"]')?.classList.contains("on")) pagos.add("emprestimo_nu");
+        else pagos.delete("emprestimo_nu");
+        dados = await api("/api/contabilidade", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ mes: mesAtual(), emprestimo_nu: num(campo.value), itens_pagos: [...pagos] })
+        });
+        rascunhoNu = null;
+        sujo = temPendente();
+        setStatus("ok", "Alterações salvas");
+        showBanner("");
+        render();
+    } catch (erroSalvar) {
+        setStatus("err", "Falha ao salvar");
+        showBanner(erroSalvar.message);
+        ocupar(botao, false);
+        atualizarBotoesEmp();
+    }
+}
+function desfazerEmp(numero) {
+    delete rascunhoEmp[String(numero)];
+    sujo = temPendente();
+    render();
+}
+function desfazerNu() {
+    rascunhoNu = null;
+    sujo = temPendente();
+    render();
 }
 
 async function recarregar(manterRascunho) {
-    const guardar = manterRascunho ? rascunho : null;
-    const estavaSujo = manterRascunho && sujo;
+    const guardar = manterRascunho && rascunho ? JSON.parse(JSON.stringify(rascunho)) : null;
+    const estavaSujo = Boolean(manterRascunho && guardar);
     dados = await api("/api/dados");
     CAMPOS = dados.campos || [];
     CATEGORIAS = dados.categorias || [];
-    rascunho = estavaSujo ? guardar : null;
-    sujo = Boolean(estavaSujo);
-    if (!estavaSujo) historico = [];
+    if (estavaSujo) {
+        const salva = linhaSalva();
+        if (guardar.salario == null) guardar.salario = salva.salario;
+        CAMPOS.forEach(campo => {
+            if (guardar[campo.id] == null) guardar[campo.id] = salva[campo.id];
+        });
+        rascunho = guardar;
+        sujo = true;
+    } else {
+        rascunho = null;
+        sujo = temPendente();
+    }
     preencherFiltros();
     render();
 }
 function ligarAcoesLinha() {
     document.querySelectorAll("[data-entra]").forEach(botao => botao.addEventListener("click", () => alternarEntra(botao.dataset.entra)));
-    document.querySelectorAll("[data-repetir]").forEach(botao => botao.addEventListener("click", () => repetirCampo(botao.dataset.repetir)));
     document.querySelectorAll("[data-renomear]").forEach(botao => botao.addEventListener("click", () => renomearCampo(botao.dataset.renomear)));
     document.querySelectorAll("[data-ocultar]").forEach(botao => botao.addEventListener("click", () => mudarCard(botao.dataset.ocultar, { ativo: false })));
     document.querySelectorAll("[data-excluir]").forEach(botao => botao.addEventListener("click", () => excluirCampo(botao.dataset.excluir)));
@@ -879,49 +1254,49 @@ function ligarAcoesLinha() {
     document.querySelectorAll("[data-nota-x]").forEach(botao => botao.addEventListener("click", () => excluirNota(botao.dataset.notaX)));
 }
 function alternarEntra(id) {
-    const anterior = JSON.parse(JSON.stringify(rascunho || linhaSalva()));
     const row = coletarMes();
     const conjunto = new Set(row.entra || []);
     if (conjunto.has(id)) conjunto.delete(id);
     else conjunto.add(id);
     row.entra = CAMPOS.map(campo => campo.id).filter(item => conjunto.has(item));
-    historico.push(anterior);
     rascunho = row;
     sujo = true;
     render();
 }
-async function repetirCampo(id) {
-    if (sujo) {
-        showBanner("Salve o mês antes de repetir o valor até dezembro.");
-        return;
-    }
-    const campo = CAMPOS.find(item => item.id === id);
-    const valor = num(document.getElementById("c_" + id)?.value);
-    if (!confirm(`Repetir ${money(valor)} de ${campo.label} até dezembro deste ano?`)) return;
-    setStatus("load", "Repetindo...");
-    try {
-        dados = await post("/api/contabilidade/repetir", { mes: mesAtual(), campo: id, valor });
-        CAMPOS = dados.campos || CAMPOS;
-        rascunho = null;
-        sujo = false;
-        historico = [];
-        setStatus("ok", "Valor repetido até dezembro");
-        showBanner("");
-        render();
-    } catch (erro) {
-        setStatus("err", "Falha ao repetir");
-        showBanner(erro.message);
-    }
-}
 async function renomearCampo(id) {
     const campo = CAMPOS.find(item => item.id === id) || (dados.ocultos || []).find(item => item.id === id);
-    const nome = prompt("Nome do card", campo ? campo.label : "");
-    if (!nome || !nome.trim() || nome.trim() === campo.label) return;
-    await mudarCard(id, { label: nome.trim() });
+    if (!campo) return;
+    const botao = document.querySelector(`[data-renomear="${id}"]`);
+    const linha = botao && botao.closest(".row");
+    const alvo = linha && linha.querySelector(".linha-nome label");
+    if (!alvo) return;
+    if (linha.querySelector(".renomear-inline")) {
+        linha.querySelector(".renomear-inline input").focus();
+        return;
+    }
+    const form = document.createElement("form");
+    form.className = "renomear-inline";
+    form.innerHTML = `<input name="nome" maxlength="60" value="${esc(campo.label)}" aria-label="Novo nome do card"><button type="submit" class="mini ok">Salvar</button><button type="button" class="mini" data-cancelar>Cancelar</button>`;
+    alvo.replaceWith(form);
+    const campoNome = form.elements.nome;
+    campoNome.focus();
+    campoNome.select();
+    const cancelar = () => form.replaceWith(alvo);
+    form.querySelector("[data-cancelar]").addEventListener("click", cancelar);
+    campoNome.addEventListener("keydown", evento => { if (evento.key === "Escape") cancelar(); });
+    form.addEventListener("submit", async evento => {
+        evento.preventDefault();
+        const nome = campoNome.value.trim();
+        if (!nome || nome === campo.label) {
+            cancelar();
+            return;
+        }
+        await mudarCard(id, { label: nome });
+    });
 }
 async function mudarCard(id, mudanças) {
     const campo = CAMPOS.find(item => item.id === id) || (dados.ocultos || []).find(item => item.id === id);
-    if (mudanças.ativo === false && !confirm(`Apagar ${campo.label} da tela? O valor continua guardado.`)) return;
+    if (mudanças.ativo === false && !confirm(`Ocultar ${campo.label} da tela? Os valores permanecem salvos.`)) return;
     if (mudanças.ativo === true && campo) { /* restaura */ }
     setStatus("load", "Atualizando card...");
     try {
@@ -977,15 +1352,22 @@ async function criarLinha(evento) {
     const categoria = form.closest(".card")?.dataset.cat;
     setStatus("load", "Criando linha...");
     try {
-        dados = await post("/api/cards", {
-            label: form.label.value,
-            categoria,
-            cartao: form.cartao ? form.cartao.value : "",
-            vencimento: form.vencimento ? form.vencimento.value : "",
-            valor: form.valor ? num(form.valor.value) : 0,
-            mes: mesAtual(),
-            entra_padrao: true
-        });
+        const existente = campoZerado(categoria, form.label.value);
+        const valorNovo = form.valor ? num(form.valor.value) : 0;
+        if (existente) {
+            if (valorNovo <= 0) throw new Error("Informe um valor maior que zero.");
+            dados = await post("/api/contabilidade", { mes: mesAtual(), [existente.id]: valorNovo });
+        } else {
+            dados = await post("/api/cards", {
+                label: form.label.value,
+                categoria,
+                cartao: form.cartao ? form.cartao.value : "",
+                vencimento: form.vencimento ? form.vencimento.value : "",
+                valor: valorNovo,
+                mes: mesAtual(),
+                entra_padrao: true
+            });
+        }
         await recarregar(true);
         setStatus("ok", "Linha adicionada");
         showBanner("");
@@ -999,12 +1381,17 @@ async function criarCard(evento) {
     const form = evento.target;
     setStatus("load", "Criando card...");
     try {
+        const nova = form.categoria.value === "__nova__";
+        if (nova && !form.nova_categoria.value.trim()) throw new Error("Informe o nome da nova categoria.");
         dados = await post("/api/cards", {
             label: form.label.value,
-            categoria: form.categoria.value,
+            categoria: nova ? "" : form.categoria.value,
+            nova_categoria: nova ? form.nova_categoria.value : "",
             vencimento: form.vencimento.value,
             entra_padrao: form.entra.checked,
-            cartao: form.cartao.value
+            cartao: form.cartao.value,
+            valor: num(form.valor.value),
+            mes: mesAtual()
         });
         await recarregar(true);
         setStatus("ok", "Card adicionado");
@@ -1056,43 +1443,11 @@ async function excluirNota(id) {
         showBanner(erro.message);
     }
 }
-function copiarAnterior() {
-    const [ano, mes] = mesAtual().split("-").map(Number);
-    const anterior = mes === 1 ? `${ano - 1}-12` : `${ano}-${String(mes - 1).padStart(2, "0")}`;
-    const origem = (dados.contabilidade || []).find(item => item.mes === anterior);
-    if (!origem) {
-        showBanner("Não há mês anterior para copiar.");
-        return;
-    }
-    historico.push(JSON.parse(JSON.stringify(rascunho || linhaSalva())));
-    const base = linhaSalva();
-    CAMPOS.forEach(campo => {
-        if (campo.id === "oliveira" && base.oliveira_calculado) return;
-        base[campo.id] = origem[campo.id] || 0;
-    });
-    rascunho = base;
-    sujo = true;
-    showBanner(`Valores de ${mesFull(anterior)} copiados. Salve para gravar.`, "warn");
-    render();
-}
-function desfazer() {
-    const anterior = historico.pop();
-    if (!anterior) {
-        showBanner("Nada para desfazer.", "warn");
-        return;
-    }
-    rascunho = anterior;
-    sujo = assinatura(rascunho) !== assinatura(linhaSalva());
-    render();
-}
 function pendentes(row) {
     return componentes(row).filter(item => item.valor > 0 && !item.pago);
 }
 function renderPainel() {
     const mes = mesAtual();
-    const ano = (mes || hojeYm()).slice(0, 4);
-    const meses = (dados.contabilidade || []).filter(item => item.mes.startsWith(ano));
-    const topo = Math.max(1, ...meses.map(item => Math.max(num(item.salario), num(item.total_a_pagar))));
     const atual = (dados.contabilidade || []).find(item => item.mes === mes) || {};
     const total = num(atual.total_a_pagar);
     const pagos = new Set(listaPagos(atual));
@@ -1101,10 +1456,10 @@ function renderPainel() {
     const abertos = pendentes(atual);
     const entra = new Set(atual.entra || []);
     document.getElementById("kpis").innerHTML = [
-        ["Total a pagar", money(total), ""],
-        ["Valor já pago", money(atual.valor_pago), "pos"],
-        ["Faltante", money(faltante), faltante > 0 ? "warn" : ""],
-        ["Sobra", money(sobra), sobra >= 0 ? "pos" : "neg"]
+        ["Total de despesas", money(total), ""],
+        ["Total pago", money(atual.valor_pago), "pos"],
+        ["Pendente", money(faltante), faltante > 0 ? "warn" : ""],
+        ["Saldo do mês", money(sobra), sobra >= 0 ? "pos" : "neg"]
     ].map(([rotulo, valor, classe]) => `<article class="kpi"><label>${rotulo}</label><strong class="${classe}">${valor}</strong></article>`).join("");
     const chip = document.getElementById("chipFora");
     if (chip) chip.remove();
@@ -1120,27 +1475,25 @@ function renderPainel() {
             <strong>${money(atual.salario)}</strong>
             <p>Valor principal de ${esc(mesFull(mes))}.</p>
         </section>
+        <div id="graficoPainel"></div>
         <section class="card cat cat-vencimentos"><div class="card-head"><h3>Vencimentos de ${esc(mesFull(mes))}</h3><button class="mini" id="abrirMes" type="button">Abrir lançamentos</button></div><div class="card-body">${vencimentos || "<p class=\"meta\">Nenhum card com dia de vencimento.</p>"}</div></section>
-        <p class="conta-regra">O total a pagar é o que sai do salário. A sobra é o que resta.</p>
+        <p class="conta-regra">O total de despesas é o valor descontado do salário e o saldo é a diferença entre os dois.</p>
         <section class="card cat cat-pendente">
-            <div class="card-head"><h3>Ainda devo pagar</h3><span class="meta">${abertos.length ? money(round2(abertos.reduce((acc, item) => acc + item.valor, 0))) : "Nada em aberto"}</span></div>
-            <div class="card-body">${listaAberta || "<p class=\"meta\">Nada pendente neste mês.</p>"}</div>
+            <div class="card-head"><h3>Pendências do mês</h3><span class="meta">${abertos.length ? money(round2(abertos.reduce((acc, item) => acc + item.valor, 0))) : "Sem pendências"}</span></div>
+            <div class="card-body">${listaAberta || "<p class=\"meta\">Nenhuma pendência neste mês.</p>"}</div>
         </section>
-        <div class="legenda"><span><i class="b-sal"></i>Salário</span><span><i class="b-tot"></i>Total a pagar</span><span><i class="b-sobra"></i>Sobra, o valor embaixo de cada mês</span></div>
-        <div class="ano">${meses.map(item => {
-            const parte = Number(item.mes.slice(5));
-            const sobraMes = num(item.sobra);
-            return `<button type="button" class="mes-barra ${item.mes === mes ? "ativo" : ""}" data-ir="${item.mes}">
-                <strong>${MONTHS[parte - 1].slice(0, 3)}</strong>
-                <span class="trilha"><i class="b-sal" style="width:${Math.max(2, num(item.salario) / topo * 100)}%"></i><i class="b-tot" style="width:${Math.max(2, num(item.total_a_pagar) / topo * 100)}%"></i></span>
-                <small class="${sobraMes >= 0 ? "pos" : "neg"}">${money(sobraMes)}</small>
-            </button>`;
-        }).join("")}</div>`;
-    document.querySelectorAll("[data-ir]").forEach(botao => botao.addEventListener("click", () => {
-        document.getElementById("filtroMes").value = botao.dataset.ir;
-        mesAntes = botao.dataset.ir;
-        render();
-    }));
+        `;
+    montarGrafico(document.getElementById("graficoPainel"), {
+        dados,
+        campos: CAMPOS,
+        categorias: CATEGORIAS,
+        mes,
+        irMes(destino) {
+            document.getElementById("filtroMes").value = destino;
+            mesAntes = destino;
+            render();
+        }
+    });
     const abrir = document.getElementById("abrirMes");
     if (abrir) abrir.addEventListener("click", () => setView("contabilidade"));
 }
@@ -1173,17 +1526,11 @@ document.getElementById("filtroMes").addEventListener("change", () => {
         seletor.value = mesAntes;
         return;
     }
-    sujo = false;
-    rascunho = null;
-    historico = [];
-    revelados = new Set();
+    limparRascunhos();
     mesAntes = seletor.value;
     render();
 });
 document.getElementById("filtroCat").addEventListener("change", render);
-document.getElementById("btnSalvar").addEventListener("click", salvarAtual);
-document.getElementById("btnCopiar").addEventListener("click", copiarAnterior);
-document.getElementById("btnDesfazer").addEventListener("click", desfazer);
 document.getElementById("btnExportar").addEventListener("click", () => { window.location = "/api/exportar/" + mesAtual(); });
 document.getElementById("soAbertos").addEventListener("change", render);
 document.getElementById("btnTema").addEventListener("click", () => aplicarTema(!document.body.classList.contains("escuro")));
