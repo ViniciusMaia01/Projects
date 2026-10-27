@@ -9,25 +9,26 @@ DADOS_DIR = RAIZ / "dados"
 PORT = 8765
 
 
-def _conexao():
-    arquivo = DADOS_DIR / "conexao.json"
+def _postgres():
+    arquivo = DADOS_DIR / "postgres.json"
     dados = {}
     if arquivo.exists():
         dados = json.loads(arquivo.read_text(encoding="utf-8"))
-    senha = os.environ.get("CONTROLE_DB_PASSWORD") or dados.get("senha") or ""
+    senha = os.environ.get("CONTROLE_PG_PASSWORD") or dados.get("senha") or ""
     if not senha:
         raise RuntimeError(
-            "Defina a senha em dados/conexao.json ou na variável CONTROLE_DB_PASSWORD. "
-            "O modelo está em dados/conexao.exemplo.json."
+            "Defina a senha do PostgreSQL em dados/postgres.json ou na variável CONTROLE_PG_PASSWORD."
         )
     return (
-        os.environ.get("CONTROLE_DSN") or dados.get("dsn") or "localhost:1521/xepdb1",
-        os.environ.get("CONTROLE_DB_USER") or dados.get("usuario") or "system",
+        os.environ.get("CONTROLE_PG_HOST") or dados.get("host") or "localhost",
+        int(os.environ.get("CONTROLE_PG_PORT") or dados.get("porta") or 5432),
+        os.environ.get("CONTROLE_PG_DB") or dados.get("banco") or "controle_mensal",
+        os.environ.get("CONTROLE_PG_USER") or dados.get("usuario") or "postgres",
         senha,
     )
 
 
-DSN, DB_USER, DB_PASSWORD = _conexao()
+PG_HOST, PG_PORT, PG_DB, PG_USER, PG_PASSWORD = _postgres()
 
 # Itens com no_total ficam fora do "Total de despesas" na maior parte dos meses.
 # Alguns meses da planilha incluem ou tiram um item; essa lista mensal é lida da fórmula.

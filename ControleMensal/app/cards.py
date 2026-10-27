@@ -12,66 +12,10 @@ _SISTEMA = {campo["id"]: campo for campo in CAMPOS}
 
 
 def garantir_tabelas(cur):
-    cur.execute("SELECT COUNT(*) FROM user_tables WHERE table_name = 'CARDS'")
-    if cur.fetchone()[0] == 0:
-        cur.execute(
-            """
-            CREATE TABLE CARDS (
-                ID VARCHAR2(40) PRIMARY KEY,
-                LABEL VARCHAR2(80) NOT NULL,
-                CATEGORIA VARCHAR2(30) NOT NULL,
-                VENCIMENTO NUMBER(2),
-                ENTRA_PADRAO NUMBER(1) DEFAULT 1 NOT NULL,
-                ORDEM NUMBER(4) DEFAULT 0 NOT NULL,
-                ATIVO NUMBER(1) DEFAULT 1 NOT NULL,
-                SISTEMA NUMBER(1) DEFAULT 0 NOT NULL,
-                DICA VARCHAR2(200),
-                CARTAO VARCHAR2(20)
-            )
-            """
-        )
-    cur.execute("SELECT COUNT(*) FROM user_tables WHERE table_name = 'CATEGORIAS_USUARIO'")
-    if cur.fetchone()[0] == 0:
-        cur.execute(
-            """
-            CREATE TABLE CATEGORIAS_USUARIO (
-                ID VARCHAR2(40) PRIMARY KEY,
-                LABEL VARCHAR2(60) NOT NULL,
-                ORDEM NUMBER(4) DEFAULT 0 NOT NULL
-            )
-            """
-        )
-    cur.execute("SELECT COUNT(*) FROM user_tables WHERE table_name = 'LANCAMENTOS'")
-    if cur.fetchone()[0] == 0:
-        cur.execute(
-            """
-            CREATE TABLE LANCAMENTOS (
-                MES DATE NOT NULL,
-                CARD_ID VARCHAR2(40) NOT NULL,
-                VALOR NUMBER(12,2) DEFAULT 0 NOT NULL,
-                CONSTRAINT LANCAMENTOS_PK PRIMARY KEY (MES, CARD_ID)
-            )
-            """
-        )
-    for coluna in ("ITENS_PAGOS", "ITENS_NO_TOTAL"):
-        cur.execute(
-            """
-            SELECT data_length FROM user_tab_cols
-            WHERE table_name = 'CONTABILIDADE_GERAL' AND column_name = :nome
-            """,
-            nome=coluna,
-        )
-        achado = cur.fetchone()
-        if achado and achado[0] < 4000:
-            cur.execute(f"ALTER TABLE CONTABILIDADE_GERAL MODIFY ({coluna} VARCHAR2(4000))")
-    cur.execute(
-        """
-        SELECT column_name FROM user_tab_cols
-        WHERE table_name = 'CARDS' AND column_name = 'CARTAO'
-        """
-    )
-    if cur.fetchone() is None:
-        cur.execute("ALTER TABLE CARDS ADD (CARTAO VARCHAR2(20))")
+    from app.pg import usuario_atual
+
+    if usuario_atual() is None:
+        return
     existentes = {linha[0] for linha in _selecionar_ids(cur)}
     for ordem, campo in enumerate(CAMPOS):
         dados_card = dict(
@@ -147,11 +91,9 @@ def extras_por_mes(cur):
 def gravar_extra(cur, mes, card_id, valor):
     cur.execute(
         """
-        MERGE INTO LANCAMENTOS t
-        USING (SELECT TRUNC(:mes, 'MM') AS mes, :card AS card FROM dual) s
-        ON (TRUNC(t.MES, 'MM') = s.mes AND t.CARD_ID = s.card)
-        WHEN MATCHED THEN UPDATE SET VALOR = :valor
-        WHEN NOT MATCHED THEN INSERT (MES, CARD_ID, VALOR) VALUES (:mes, :card, :valor)
+        INSERT INTO LANCAMENTOS (usuario_id, MES, CARD_ID, VALOR)
+        VALUES (:usuario_id, date_trunc('month', :mes), :card, :valor)
+        ON CONFLICT (usuario_id, mes, card_id) DO UPDATE SET VALOR = EXCLUDED.VALOR
         """,
         mes=mes,
         card=card_id,

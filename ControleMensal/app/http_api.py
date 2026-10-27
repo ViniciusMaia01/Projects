@@ -24,6 +24,8 @@ from app.banco import (
     quitar_emprestimo,
 )
 from app.config import WEB_DIR
+from app import pg
+from app import sessao
 
 mimetypes.add_type("text/css", ".css")
 mimetypes.add_type("text/javascript", ".js")
@@ -57,14 +59,31 @@ class Handler(SimpleHTTPRequestHandler):
             if cabecalho in self.headers:
                 del self.headers[cabecalho]
         caminho = urlparse(self.path).path
-        try:
-            if caminho == "/favicon.ico":
-                self.send_response(204)
-                self.end_headers()
+        if caminho == "/favicon.ico":
+            self.send_response(204)
+            self.end_headers()
+            return
+        if caminho == "/api/sessao":
+            usuario = sessao.carregar(sessao.ler_cookie(self.headers.get("Cookie")))
+            if not usuario:
+                self._send_json({"ok": False, "erro": "Faça login."}, status=401)
                 return
-            if caminho in ("/", "/index.html", "/Controle_Financeiro.html"):
-                self.path = "/index.html"
-                return super().do_GET()
+            self._send_json({"ok": True, **usuario})
+            return
+        if caminho.startswith("/api/"):
+            if not self._entrar():
+                return
+            try:
+                self._get_api(caminho)
+            finally:
+                self._sair()
+            return
+        if caminho in ("/", "/index.html", "/Controle_Financeiro.html"):
+            self.path = "/index.html"
+        super().do_GET()
+
+    def _get_api(self, caminho):
+        try:
             if caminho in ("/api/dados", "/api/mes"):
                 self._send_json(buscar_tudo())
                 return
@@ -81,16 +100,51 @@ class Handler(SimpleHTTPRequestHandler):
                 self.end_headers()
                 self.wfile.write(conteudo)
                 return
+            self.send_error(404)
         except ErroValidacao as exc:
             self._send_json({"ok": False, "erro": str(exc)}, status=400)
+        except Exception as exc:
+            self._send_json({"ok": False, "erro": str(exc)}, status=500)
+
+    def do_POST(self):
+        caminho = urlparse(self.path).path
+        if caminho == "/api/login":
+            self._login()
+            return
+        if caminho == "/api/sair":
+            sessao.sair(sessao.ler_cookie(self.headers.get("Cookie")))
+            self._cookie = sessao.cookie_vazio()
+            self._send_json({"ok": True})
+            return
+        if not self._entrar():
+            return
+        try:
+            self._post_api(caminho)
+        finally:
+            self._sair()
+
+    def _login(self):
+        try:
+            payload = self._read_json()
+            resultado = sessao.entrar(payload.get("login"), payload.get("senha"))
+        except json.JSONDecodeError:
+            self._send_json({"ok": False, "erro": "JSON inválido"}, status=400)
+            return
+        except ErroValidacao as exc:
+            self._send_json({"ok": False, "erro": str(exc)}, status=401)
             return
         except Exception as exc:
             self._send_json({"ok": False, "erro": str(exc)}, status=500)
             return
-        super().do_GET()
+        self._cookie = sessao.cookie(resultado["token"])
+        self._send_json({
+            "ok": True,
+            "id": resultado["id"],
+            "usuario": resultado["usuario"],
+            "email": resultado["email"],
+        })
 
-    def do_POST(self):
-        caminho = urlparse(self.path).path
+    def _post_api(self, caminho):
         try:
             payload = self._read_json()
         except json.JSONDecodeError:
@@ -108,6 +162,15 @@ class Handler(SimpleHTTPRequestHandler):
             "/api/observacao": salvar_observacao,
         }
         try:
+            if caminho == "/api/conta":
+                self._send_json(sessao.atualizar(
+                    pg.exigir_usuario(),
+                    payload.get("usuario"),
+                    payload.get("email"),
+                    payload.get("senha_atual") or "",
+                    payload.get("senha_nova") or "",
+                ))
+                return
             if caminho in rotas:
                 self._send_json(rotas[caminho](payload))
                 return
@@ -120,13 +183,25 @@ class Handler(SimpleHTTPRequestHandler):
             if caminho == "/api/observacao/excluir":
                 self._send_json(excluir_observacao(payload))
                 return
+            self.send_error(404)
         except ErroValidacao as exc:
             self._send_json({"ok": False, "erro": str(exc)}, status=400)
-            return
         except Exception as exc:
             self._send_json({"ok": False, "erro": str(exc)}, status=500)
-            return
-        self.send_error(404)
+
+    def _entrar(self):
+        usuario = sessao.carregar(sessao.ler_cookie(self.headers.get("Cookie")))
+        if not usuario:
+            self._send_json({"ok": False, "erro": "Faça login."}, status=401)
+            return False
+        self._ctx = pg.definir_usuario(usuario["id"])
+        return True
+
+    def _sair(self):
+        ctx = getattr(self, "_ctx", None)
+        if ctx is not None:
+            pg.limpar_usuario(ctx)
+            self._ctx = None
 
     def _read_json(self):
         tamanho = int(self.headers.get("Content-Length") or 0)
@@ -138,6 +213,9 @@ class Handler(SimpleHTTPRequestHandler):
         self.send_response(status)
         self.send_header("Content-Type", "application/json; charset=utf-8")
         self.send_header("Content-Length", str(len(payload)))
+        if getattr(self, "_cookie", None):
+            self.send_header("Set-Cookie", self._cookie)
+            self._cookie = None
         self.end_headers()
         self.wfile.write(payload)
 

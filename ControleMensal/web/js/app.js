@@ -56,7 +56,12 @@ function showBanner(texto, tipo) {
 }
 async function api(path, options) {
     const resposta = await fetch(path, options);
-    const corpo = await resposta.json();
+    const tipo = resposta.headers.get("content-type") || "";
+    const corpo = tipo.includes("json") ? await resposta.json() : {};
+    if (resposta.status === 401 && path !== "/api/login") {
+        mostrarLogin();
+        throw new Error(corpo.erro || "Faça login.");
+    }
     if (!resposta.ok) throw new Error(corpo.erro || "Falha na operação");
     return corpo;
 }
@@ -136,11 +141,17 @@ function limparRascunhos() {
 const TITULOS = {
     painel: ["Principal", "Resumo do mês: salário, despesas, valores pagos, pendências e saldo."],
     contabilidade: ["Lançamentos", "Lançamentos por categoria: pessoas, variáveis, assinaturas, cartões, custo fixo e taxas. O empréstimo Nu fica na aba Empréstimos."],
-    emprestimos: ["Empréstimos", "Acompanhamento dos empréstimos: parcela do mês, saldo devedor e projeção do mês seguinte. Inclui o empréstimo Nu."]
+    emprestimos: ["Empréstimos", "Acompanhamento dos empréstimos: parcela do mês, saldo devedor e projeção do mês seguinte. Inclui o empréstimo Nu."],
+    config: ["Configuração", "Altere o usuário, o e-mail e a senha desta conta."]
 };
+let contaAtual = null;
 function ajustarAcoes() {
     document.getElementById("soAbertosCampo").classList.toggle("hidden", view !== "contabilidade");
-    document.getElementById("campoCat").classList.toggle("hidden", view === "painel");
+    document.getElementById("campoCat").classList.toggle("hidden", view === "painel" || view === "config");
+    document.getElementById("filtroMes").closest(".field").classList.toggle("hidden", view === "config");
+    document.getElementById("btnExportar").classList.toggle("hidden", view === "config");
+    document.getElementById("kpis").classList.toggle("hidden", view === "config");
+    document.getElementById("avisos").classList.toggle("hidden", view === "config");
 }
 function setView(next) {
     if (next === view) return;
@@ -154,6 +165,7 @@ function setView(next) {
     document.getElementById("viewPainel").classList.toggle("hidden", next !== "painel");
     document.getElementById("viewContabilidade").classList.toggle("hidden", next !== "contabilidade");
     document.getElementById("viewEmprestimos").classList.toggle("hidden", next !== "emprestimos");
+    document.getElementById("viewConfig").classList.toggle("hidden", next !== "config");
     ajustarAcoes();
     preencherFiltros();
     render();
@@ -178,6 +190,7 @@ function preencherFiltros() {
     if ([...catSel.options].some(opcao => opcao.value === catManter)) catSel.value = catManter;
 }
 function render() {
+    if (view === "config") return;
     if (view === "contabilidade") renderContab();
     else if (view === "emprestimos") renderEmp();
     else renderPainel();
@@ -646,22 +659,71 @@ function renderOcultos() {
         `<div class="nota"><span>${esc(card.label)}</span><button type="button" class="mini" data-restaurar="${card.id}">Restaurar</button></div>`
     ).join("")}</div></section>`;
 }
+function pintarKpis(blocos) {
+    document.getElementById("kpis").innerHTML = blocos.map(([rotulo, valor, classe]) =>
+        `<article class="kpi"><label>${rotulo}</label><strong class="${classe}">${valor}</strong></article>`
+    ).join("");
+}
+function nomeAtalho(alvo) {
+    if (alvo.classList.contains("hero")) return "Salário";
+    const titulo = alvo.querySelector(":scope > .card-head h3");
+    if (titulo) return titulo.textContent.replace(/\s+/g, " ").trim();
+    if (alvo.classList.contains("cat-totais")) return "Totais";
+    return "Card";
+}
+function valorAtalho(alvo) {
+    if (alvo.classList.contains("hero")) return alvo.querySelector("strong")?.textContent.trim() || "";
+    const meta = alvo.querySelector(":scope > .card-head .meta");
+    if (!meta) return "";
+    const dinheiro = meta.textContent.match(/R\$\s*[\d.,]+/);
+    return dinheiro ? dinheiro[0] : "";
+}
+function montarAtalhos() {
+    const vista = document.getElementById(view === "contabilidade" ? "viewContabilidade" : view === "emprestimos" ? "viewEmprestimos" : "viewPainel");
+    const caixa = document.getElementById("kpisMini");
+    if (!vista || !caixa) return;
+    const alvos = [...vista.querySelectorAll(":scope > .hero, :scope > .card, :scope > .cats > .card, :scope > #graficoPainel .card")];
+    caixa.innerHTML = alvos.map((alvo, indice) => {
+        const id = view + "-" + indice;
+        alvo.dataset.atalho = id;
+        const valor = valorAtalho(alvo);
+        const cat = alvo.classList.contains("hero") ? "cat-hero" : ([...alvo.classList].find(nome => nome.startsWith("cat-")) || "");
+        return `<button type="button" class="kpi atalho ${cat}" data-alvo="${id}"><label>${esc(nomeAtalho(alvo))}</label>${valor ? `<strong>${esc(valor)}</strong>` : ""}</button>`;
+    }).join("");
+}
+function irParaCard(id) {
+    const vista = document.getElementById(view === "contabilidade" ? "viewContabilidade" : view === "emprestimos" ? "viewEmprestimos" : "viewPainel");
+    const alvo = vista?.querySelector(`[data-atalho="${id}"]`);
+    const main = document.querySelector(".main");
+    if (!alvo || !main) return;
+    const topo = alvo.getBoundingClientRect().top - main.getBoundingClientRect().top + main.scrollTop - 16;
+    main.scrollTo({ top: Math.max(0, topo), behavior: "smooth" });
+    document.querySelectorAll(".card-foco").forEach(item => item.classList.remove("card-foco"));
+    alvo.classList.add("card-foco");
+    document.querySelectorAll("#kpisMini [data-alvo]").forEach(botao => botao.classList.toggle("on", botao.dataset.alvo === id));
+}
+function colocarChip(html) {
+    const atual = document.getElementById("chipFora");
+    if (!html) {
+        if (atual) atual.remove();
+        return;
+    }
+    if (atual) atual.outerHTML = html;
+    else document.getElementById("avisos").insertAdjacentHTML("beforeend", html);
+}
 function atualizarTotais() {
     const row = coletarMes();
     const conta = somas(row);
     const faltante = conta.faltante;
     const sobra = conta.sobra;
-    document.getElementById("kpis").innerHTML = [
+    pintarKpis([
         ["Salário", money(conta.salario), ""],
         ["Total de despesas", money(conta.total), ""],
         ["Total pago", money(conta.pago), "pos"],
         ["Pendente", money(faltante), faltante > 0 ? "warn" : ""],
         ["Saldo do mês", money(sobra), sobra >= 0 ? "pos" : "neg"]
-    ].map(([rotulo, valor, classe]) => `<article class="kpi"><label>${rotulo}</label><strong class="${classe}">${valor}</strong></article>`).join("");
-    const chip = document.getElementById("chipFora");
-    const htmlChip = conta.fora > 0 ? `<div class="chip" id="chipFora">Excluído do total e pendente: <strong>${money(conta.fora)}</strong></div>` : "";
-    if (chip) chip.outerHTML = htmlChip;
-    else if (htmlChip) document.getElementById("kpis").insertAdjacentHTML("afterend", htmlChip);
+    ]);
+    colocarChip(conta.fora > 0 ? `<div class="chip" id="chipFora">Excluído do total e pendente: <strong>${money(conta.fora)}</strong></div>` : "");
     const caixa = document.getElementById("totais");
     if (caixa) {
         caixa.innerHTML = `
@@ -686,6 +748,7 @@ function atualizarTotais() {
         const sub = card.querySelector(".subtotal strong");
         if (sub) sub.textContent = textoInvestimento(document.getElementById("c_investimento")?.value);
     });
+    if (view === "contabilidade") montarAtalhos();
 }
 
 function ligarBrl(input) {
@@ -749,6 +812,7 @@ function renderEmp() {
     if (desfazerNuBtn) desfazerNuBtn.addEventListener("click", desfazerNu);
     atualizarKpiEmp();
     atualizarBotoesEmp();
+    montarAtalhos();
 }
 function cardEmp(numero, mes) {
     const lista = (dados.emprestimos || []).filter(item => Number(item.emprestimo) === numero).sort((a, b) => a.mes.localeCompare(b.mes));
@@ -933,9 +997,8 @@ function atualizarKpiEmp() {
         ["Empréstimos", money(round2(pagamento + juros)), ""]
     ];
     if (infoNu.pendente) blocos.push(["Empréstimo Nu", money(nu), ""]);
-    document.getElementById("kpis").innerHTML = blocos.map(([rotulo, valor, classe]) => `<article class="kpi"><label>${rotulo}</label><strong class="${classe}">${valor}</strong></article>`).join("");
-    const chip = document.getElementById("chipFora");
-    if (chip) chip.remove();
+    pintarKpis(blocos);
+    colocarChip("");
 }
 function renderHistorico() {
     const info = nuSemPendencia(mesAtual());
@@ -1455,14 +1518,13 @@ function renderPainel() {
     const sobra = num(atual.sobra);
     const abertos = pendentes(atual);
     const entra = new Set(atual.entra || []);
-    document.getElementById("kpis").innerHTML = [
+    pintarKpis([
         ["Total de despesas", money(total), ""],
         ["Total pago", money(atual.valor_pago), "pos"],
         ["Pendente", money(faltante), faltante > 0 ? "warn" : ""],
         ["Saldo do mês", money(sobra), sobra >= 0 ? "pos" : "neg"]
-    ].map(([rotulo, valor, classe]) => `<article class="kpi"><label>${rotulo}</label><strong class="${classe}">${valor}</strong></article>`).join("");
-    const chip = document.getElementById("chipFora");
-    if (chip) chip.remove();
+    ]);
+    colocarChip("");
     const listaAberta = abertos.map(item => `<div class="nota"><div>${esc(item.label)}</div><strong>${money(item.valor)}</strong></div>`).join("");
     const vencimentos = CAMPOS.filter(campo => campo.vencimento).map(campo => {
         const pago = pagos.has(campo.id);
@@ -1496,20 +1558,39 @@ function renderPainel() {
     });
     const abrir = document.getElementById("abrirMes");
     if (abrir) abrir.addEventListener("click", () => setView("contabilidade"));
+    montarAtalhos();
 }
 
+function mostrarLogin() {
+    document.getElementById("telaLogin").classList.remove("hidden");
+    document.getElementById("quem").textContent = "";
+}
+function mostrarQuem(usuario) {
+    contaAtual = usuario;
+    document.getElementById("telaLogin").classList.add("hidden");
+    document.getElementById("quem").textContent = usuario.usuario || usuario.email || "";
+    document.getElementById("cfgUsuario").value = usuario.usuario || "";
+    document.getElementById("cfgEmail").value = usuario.email || "";
+}
 async function carregar() {
     if (location.protocol === "file:") {
         showBanner("Abra pelo Iniciar.bat, em http://localhost:8765.");
         setStatus("err", "Servidor não detectado");
         return;
     }
+    aplicarTema(localStorage.getItem("controle-aparencia") === "escuro");
     try {
+        const sessao = await fetch("/api/sessao");
+        if (!sessao.ok) {
+            mostrarLogin();
+            setStatus("err", "Faça login");
+            return;
+        }
+        mostrarQuem(await sessao.json());
         dados = await api("/api/dados");
         CAMPOS = dados.campos || [];
         CATEGORIAS = dados.categorias || [];
         setStatus("ok", "Pronto para editar");
-        aplicarTema(localStorage.getItem("controle-aparencia") === "escuro");
         ajustarAcoes();
         preencherFiltros();
         render();
@@ -1534,9 +1615,70 @@ document.getElementById("filtroCat").addEventListener("change", render);
 document.getElementById("btnExportar").addEventListener("click", () => { window.location = "/api/exportar/" + mesAtual(); });
 document.getElementById("soAbertos").addEventListener("change", render);
 document.getElementById("btnTema").addEventListener("click", () => aplicarTema(!document.body.classList.contains("escuro")));
+document.getElementById("formLogin").addEventListener("submit", async (evento) => {
+    evento.preventDefault();
+    const erro = document.getElementById("loginErro");
+    erro.textContent = "";
+    try {
+        const quem = await post("/api/login", {
+            login: document.getElementById("loginCampo").value,
+            senha: document.getElementById("senhaCampo").value
+        });
+        document.getElementById("senhaCampo").value = "";
+        mostrarQuem(quem);
+        await carregar();
+    } catch (falha) {
+        erro.textContent = falha.message;
+    }
+});
+document.getElementById("formConta").addEventListener("submit", async (evento) => {
+    evento.preventDefault();
+    const erro = document.getElementById("cfgErro");
+    const ok = document.getElementById("cfgOk");
+    erro.textContent = "";
+    ok.textContent = "";
+    try {
+        const quem = await post("/api/conta", {
+            usuario: document.getElementById("cfgUsuario").value,
+            email: document.getElementById("cfgEmail").value,
+            senha_atual: document.getElementById("cfgSenhaAtual").value,
+            senha_nova: document.getElementById("cfgSenhaNova").value
+        });
+        document.getElementById("cfgSenhaAtual").value = "";
+        document.getElementById("cfgSenhaNova").value = "";
+        mostrarQuem(quem);
+        ok.textContent = "Dados atualizados.";
+    } catch (falha) {
+        erro.textContent = falha.message;
+    }
+});
+document.getElementById("btnSair").addEventListener("click", async () => {
+    await post("/api/sair", {});
+    dados = { contabilidade: [], emprestimos: [], observacoes: [], alertas: [] };
+    mostrarLogin();
+    setStatus("err", "Faça login");
+});
+function destinoRolagem() {
+    const main = document.querySelector(".main");
+    return main.scrollHeight > main.clientHeight + 4 ? main : document.scrollingElement;
+}
+document.getElementById("btnTopo").addEventListener("click", () => {
+    destinoRolagem().scrollTo({ top: 0, behavior: "smooth" });
+});
+document.getElementById("btnFim").addEventListener("click", () => {
+    const alvo = destinoRolagem();
+    alvo.scrollTo({ top: alvo.scrollHeight, behavior: "smooth" });
+});
+document.getElementById("kpisMini").addEventListener("click", evento => {
+    const botao = evento.target.closest("[data-alvo]");
+    if (botao) irParaCard(botao.dataset.alvo);
+});
 function aplicarTema(escuro) {
     document.body.classList.toggle("escuro", escuro);
-    document.getElementById("btnTema").textContent = escuro ? "Tema claro" : "Tema escuro";
+    const texto = escuro ? "Tema claro" : "Tema escuro";
+    const botao = document.getElementById("btnTema");
+    botao.setAttribute("aria-label", texto);
+    document.getElementById("rotuloTema").textContent = texto;
     localStorage.setItem("controle-aparencia", escuro ? "escuro" : "claro");
 }
 carregar();

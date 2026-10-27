@@ -48,9 +48,10 @@
     }
 
     function desenhar(meses, series, estado, mesAtual) {
-        const W = 920;
-        const H = 340;
-        const margem = { e: 60, d: 16, t: 14, b: 44 };
+        const movel = window.matchMedia("(max-width: 800px)").matches;
+        const W = movel ? Math.max(680, 78 + meses.length * 68) : 920;
+        const H = movel ? 360 : 340;
+        const margem = movel ? { e: 68, d: 10, t: 16, b: 56 } : { e: 60, d: 16, t: 14, b: 44 };
         const larg = W - margem.e - margem.d;
         const alt = H - margem.t - margem.b;
         const fatia = larg / meses.length;
@@ -106,7 +107,8 @@
         meses.forEach((item, i) => {
             partes.push(`<rect class="graf-coluna" data-i="${i}" x="${margem.e + fatia * i}" y="${margem.t}" width="${fatia}" height="${alt + margem.b}"/>`);
         });
-        return `<svg class="graf-svg" viewBox="0 0 ${W} ${H}" role="img" aria-label="Gráfico mensal">${partes.join("")}</svg>`;
+        const largo = movel ? ` style="width:${W}px;max-width:none;height:auto"` : "";
+        return `<svg class="graf-svg${movel ? " movel" : ""}" viewBox="0 0 ${W} ${H}"${largo} role="img" aria-label="Gráfico mensal">${partes.join("")}</svg>`;
     }
 
     function desenharMes(row, series) {
@@ -137,7 +139,7 @@
                 lista.forEach((valor, i) => { if (valor > lista[melhor]) melhor = i; });
                 const mes = meses[melhor];
                 const nome = mes ? `${MESES[Number(mes.mes.slice(5)) - 1]}/${mes.mes.slice(2, 4)}` : "";
-                return `<tr><td><span class="graf-ponto-leg" style="background:${serie.cor}"></span>${esc(serie.label)}</td><td class="num">${fmt(total)}</td><td class="num">${fmt(media)}</td><td class="num">${fmt(lista[melhor])} <small>${nome}</small></td></tr>`;
+                return `<tr><td><span class="graf-ponto-leg" style="background:${serie.cor}"></span>${esc(serie.label)}</td><td class="num" data-rotulo="Total no período">${fmt(total)}</td><td class="num" data-rotulo="Média por mês">${fmt(media)}</td><td class="num" data-rotulo="Maior mês">${fmt(lista[melhor])} <small>${nome}</small></td></tr>`;
             }).join("")}</tbody>
         </table></div>`;
     }
@@ -206,26 +208,34 @@
             const mostrar = (evento, i) => {
                 const [ano, parte] = meses[i].mes.split("-");
                 const salario = n(meses[i].salario);
-                dica.innerHTML = `<strong>${MESES_LONGOS[Number(parte) - 1]} de ${ano}</strong><div class="graf-dica-base"><span>Salário (base)</span><b>${brl(salario)}</b></div>${series.map(serie => {
+                dica.innerHTML = `<button type="button" class="graf-dica-fechar" aria-label="Fechar">×</button><strong>${MESES_LONGOS[Number(parte) - 1]} de ${ano}</strong><div class="graf-dica-base"><span>Salário (base)</span><b>${brl(salario)}</b></div>${series.map(serie => {
                     const percentual = salario ? pct(serie.brutos[i] / salario * 100) : "-";
                     return `<div><i style="background:${serie.cor}"></i><span>${esc(serie.label)}</span><b>${brl(serie.brutos[i])}</b><em>${percentual}</em></div>`;
                 }).join("")}`;
                 dica.hidden = false;
                 const caixa = area.getBoundingClientRect();
-                let x = evento.clientX - caixa.left + 14;
-                if (x + dica.offsetWidth > caixa.width - 4) x = evento.clientX - caixa.left - dica.offsetWidth - 14;
-                const topo = Math.max(4, Math.min(evento.clientY - caixa.top - 10, caixa.height - dica.offsetHeight - 4));
-                dica.style.left = `${Math.max(4, x)}px`;
-                dica.style.top = `${topo}px`;
+                const esquerda = area.scrollLeft + 8;
+                const direita = area.scrollLeft + caixa.width - dica.offsetWidth - 8;
+                const topoMin = area.scrollTop + 8;
+                const topoMax = area.scrollTop + caixa.height - dica.offsetHeight - 8;
+                const x = evento.clientX - caixa.left + area.scrollLeft + 14;
+                const y = evento.clientY - caixa.top + area.scrollTop - 10;
+                dica.style.left = `${Math.max(esquerda, Math.min(x, direita))}px`;
+                dica.style.top = `${Math.max(topoMin, Math.min(y, Math.max(topoMin, topoMax)))}px`;
             };
+            dica.addEventListener("click", evento => {
+                if (evento.target.closest(".graf-dica-fechar")) dica.hidden = true;
+            });
             area.querySelectorAll(".graf-coluna").forEach(coluna => {
                 const i = Number(coluna.dataset.i);
-                coluna.addEventListener("mousemove", evento => mostrar(evento, i));
-                coluna.addEventListener("mouseleave", () => { dica.hidden = true; });
-                coluna.addEventListener("click", () => ctx.irMes(meses[i].mes));
+                coluna.addEventListener("click", evento => mostrar(evento, i));
             });
         }
 
+        const consulta = window.matchMedia("(max-width: 800px)");
+        if (raiz._aoRedimensionar) consulta.removeEventListener("change", raiz._aoRedimensionar);
+        raiz._aoRedimensionar = () => pintar();
+        consulta.addEventListener("change", raiz._aoRedimensionar);
         pintar();
     }
 
