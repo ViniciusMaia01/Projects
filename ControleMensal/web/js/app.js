@@ -183,7 +183,8 @@ function preencherFiltros() {
     mesAntes = mesSel.value;
     const catManter = catSel.value || "todas";
     if (view === "emprestimos") {
-        catSel.innerHTML = '<option value="todas">Total dos empréstimos</option><option value="1">Empréstimo 1</option><option value="2">Empréstimo 2</option>';
+        const opcoes = numerosEmprestimo().map(numero => `<option value="${numero}">Empréstimo ${numero}</option>`).join("");
+        catSel.innerHTML = `<option value="todas">Total dos empréstimos</option>${opcoes}`;
     } else {
         catSel.innerHTML = '<option value="todas">Todas as categorias</option>' + CATEGORIAS.map(cat => `<option value="${cat.id}">${cat.label}</option>`).join("");
     }
@@ -458,7 +459,7 @@ function renderContab() {
         <div class="cats">${grupos.map(grupo => cardCategoria(grupo, row, entra, pagos)).join("")}</div>
         ${renderNotas(row.mes)}
         ${renderNovoCard()}
-        ${renderOcultos()}
+        ${renderOcultos(row)}
         <div class="card cat cat-totais"><div class="totals" id="totais"></div></div>`;
     document.querySelectorAll("#viewContabilidade input.brl").forEach(input => {
         if (input.form) ligarBrlForm(input);
@@ -652,11 +653,11 @@ function renderNovoCard() {
         </form>
     </div></section>`;
 }
-function renderOcultos() {
-    const ocultos = dados.ocultos || [];
-    if (!ocultos.length) return "";
+function renderOcultos(row) {
+    const ocultos = (dados.ocultos || []).filter(card => card && card.id);
+    if (!ocultos.length || !row) return "";
     return `<section class="card cat cat-ocultos"><div class="card-head"><h3>Ocultos</h3></div><div class="card-body">${ocultos.map(card =>
-        `<div class="nota"><span>${esc(card.label)}</span><button type="button" class="mini" data-restaurar="${card.id}">Restaurar</button></div>`
+        `<div class="nota"><span>${esc(card.label)}</span><strong>${money(num(row[card.id]))}</strong><button type="button" class="mini" data-restaurar="${card.id}">Restaurar</button></div>`
     ).join("")}</div></section>`;
 }
 function pintarKpis(blocos) {
@@ -787,16 +788,41 @@ function alternarPago(botao) {
     if (linha) linha.classList.toggle("is-pago", ativo);
 }
 
+function emprestimoComValor(numero) {
+    return (dados.emprestimos || []).some(item =>
+        Number(item.emprestimo) === numero &&
+        (num(item.saldo_inicio) > 0 || num(item.pagamento) > 0 || num(item.juros) > 0)
+    );
+}
+function numerosEmprestimo() {
+    return [1, 2].filter(emprestimoComValor);
+}
+function vagaEmprestimo() {
+    return [1, 2].find(numero => !emprestimoComValor(numero)) || null;
+}
+function renderNovoEmp() {
+    if (!vagaEmprestimo()) return "";
+    return `<section class="card cat cat-novo"><div class="card-head"><h3>Novo empréstimo</h3></div><div class="card-body">
+        <form id="formEmp" class="form-linha">
+            <label class="field"><span>Saldo inicial</span><input name="saldo" class="brl" inputmode="decimal" value="0,00" required></label>
+            <label class="field"><span>Parcela do mês</span><input name="pagamento" class="brl" inputmode="decimal" value="0,00"></label>
+            <button class="btn" type="submit">Adicionar</button>
+        </form>
+    </div></section>`;
+}
 function renderEmp() {
     const mes = mesAtual();
     const cat = document.getElementById("filtroCat").value;
-    const numeros = cat === "todas" ? [1, 2] : [Number(cat)];
+    const existentes = numerosEmprestimo();
+    const numeros = cat === "todas" ? existentes : existentes.filter(numero => numero === Number(cat));
     document.getElementById("viewEmprestimos").innerHTML = `<p class="conta-regra">As parcelas dos empréstimos 1 e 2 compõem o valor de Oliveira em Lançamentos e não são somadas novamente ao total de despesas. O empréstimo Nu é somado separadamente.</p>`
         + numeros.map(numero => cardEmp(numero, mes)).join("")
+        + renderNovoEmp()
         + cardNu(mes)
-        + renderHistorico()
-        || '<p class="banner show">Nenhum empréstimo neste filtro.</p>';
+        + renderHistorico();
     document.querySelectorAll("#viewEmprestimos input.brl").forEach(ligarBrl);
+    const formEmp = document.getElementById("formEmp");
+    if (formEmp) formEmp.addEventListener("submit", criarEmprestimo);
     document.querySelectorAll("#viewEmprestimos .card[data-emp]").forEach(ligarCardEmp);
     document.querySelectorAll("[data-quitar]").forEach(botao => botao.addEventListener("click", () => quitarEmp(Number(botao.dataset.quitar))));
     document.querySelectorAll("[data-salvar-emp]").forEach(botao => botao.addEventListener("click", () => salvarEmpCard(botao.dataset.salvarEmp, botao)));
@@ -1198,6 +1224,53 @@ function oliveiraPagoPayload(base) {
     if (deve) pagos.add("oliveira");
     else pagos.delete("oliveira");
     return { mes, itens_pagos: [...pagos] };
+}
+async function criarEmprestimo(evento) {
+    evento.preventDefault();
+    const numero = vagaEmprestimo();
+    const form = evento.target;
+    const saldo = num(form.saldo.value);
+    const pagamento = num(form.pagamento.value);
+    if (!numero) {
+        showBanner("Os dois empréstimos já estão em uso.");
+        return;
+    }
+    if (saldo <= 0) {
+        showBanner("Informe o saldo inicial.");
+        return;
+    }
+    if (pagamento < 0) {
+        showBanner("A parcela não pode ser negativa.");
+        return;
+    }
+    if (pagamento > saldo) {
+        showBanner("A parcela não pode passar do saldo.");
+        return;
+    }
+    const botao = form.querySelector("button");
+    ocupar(botao, true);
+    setStatus("load", "Criando empréstimo...");
+    try {
+        const existente = (dados.emprestimos || []).find(item => item.mes === mesAtual() && Number(item.emprestimo) === numero);
+        dados = await post("/api/emprestimo", {
+            id: existente ? existente.id : null,
+            mes: mesAtual(),
+            emprestimo: numero,
+            saldo_inicio: saldo,
+            pagamento,
+            pago: false,
+            alterar_valores: true
+        });
+        limparRascunhos();
+        setStatus("ok", "Empréstimo adicionado");
+        showBanner("");
+        preencherFiltros();
+        render();
+    } catch (erro) {
+        setStatus("err", "Falha ao criar");
+        showBanner(erro.message);
+        ocupar(botao, false);
+    }
 }
 async function salvarEmpCard(numero, botao) {
     const card = document.querySelector(`#viewEmprestimos .card[data-emp="${numero}"]`);

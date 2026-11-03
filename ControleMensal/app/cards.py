@@ -27,14 +27,6 @@ def garantir_tabelas(cur):
             dica=campo.get("dica"),
         )
         if campo["id"] not in existentes:
-            cur.execute(
-                """
-                INSERT INTO CARDS (ID, LABEL, CATEGORIA, VENCIMENTO, ENTRA_PADRAO, ORDEM, ATIVO, SISTEMA, DICA)
-                VALUES (:id, :label, :categoria, :vencimento, :entra, :ordem, 1, 1, :dica)
-                """,
-                entra=0 if campo["no_total"] else 1,
-                **dados_card,
-            )
             continue
         cur.execute(
             """

@@ -46,24 +46,11 @@ def _ids_conhecidos():
 
 def _usar_cards(cur):
     cards = catalogo.listar(cur)
-    ids = {card["id"] for card in cards} if cards else {campo["id"] for campo in CAMPOS}
-    _estado.set((cards, ids))
+    _estado.set((cards, {card["id"] for card in cards}))
 
 
 def _cards_ativos():
-    return [card for card in _cards() if card["ativo"]] or [
-        {
-            "id": campo["id"],
-            "label": campo["label"],
-            "categoria": campo["categoria"],
-            "vencimento": campo.get("vencimento"),
-            "entra_padrao": not campo["no_total"],
-            "ativo": True,
-            "sistema": True,
-            "dica": campo.get("dica") or "",
-        }
-        for campo in CAMPOS
-    ]
+    return [card for card in _cards() if card["ativo"]]
 
 
 def iniciar_pool():
@@ -165,6 +152,7 @@ def contas_do_mes(valores, salario, pagos, cards, acrescimos=None, entra=None):
     acrescimos = acrescimos or {}
     ativos = [card for card in cards if card.get("ativo", True)]
     por_id = {card["id"]: card for card in ativos}
+    todos = {card["id"]: card for card in cards}
     extras = {}
     for card in ativos:
         if card.get("categoria") != "assinaturas" or not card.get("cartao"):
@@ -181,8 +169,8 @@ def contas_do_mes(valores, salario, pagos, cards, acrescimos=None, entra=None):
             pago += valor
 
     for item in _LINHAS_TOTAL:
-        card = por_id.get(item)
-        if card and card.get("categoria") == "assinaturas" and card.get("cartao"):
+        card = todos.get(item)
+        if not card or (card.get("categoria") == "assinaturas" and card.get("cartao")):
             continue
         somar(item, dinheiro(valores.get(item, 0)))
     for card in ativos:
@@ -352,6 +340,8 @@ def _soma_parcelas(cur, mes):
 
 
 def _sync_oliveira(cur, meses):
+    if not any(card["id"] == "oliveira" for card in _cards()):
+        return
     for mes in sorted(set(meses)):
         if not _tem_emprestimo(cur, mes):
             continue
@@ -1033,6 +1023,8 @@ def _preencher_formulas(cur):
 
 def _incluir_investimento(cur):
     """Investimento sai do salário, então entra no total de todos os meses."""
+    if not any(card["id"] == "investimento" for card in _cards()):
+        return
     cur.execute("UPDATE CARDS SET ENTRA_PADRAO = 1 WHERE ID = 'investimento'")
     cur.execute("SELECT MES, ITENS_NO_TOTAL FROM CONTABILIDADE_GERAL")
     mudou = False
