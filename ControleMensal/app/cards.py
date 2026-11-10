@@ -31,11 +31,12 @@ def garantir_tabelas(cur):
         cur.execute(
             """
             UPDATE CARDS
-            SET CATEGORIA = :categoria, VENCIMENTO = :vencimento,
-                ORDEM = :ordem, DICA = :dica
+            SET CATEGORIA = :categoria, VENCIMENTO = :vencimento, ORDEM = :ordem
             WHERE ID = :id AND SISTEMA = 1
             """,
-            **{chave: valor for chave, valor in dados_card.items() if chave not in ("label", "id")},
+            categoria=dados_card["categoria"],
+            vencimento=dados_card["vencimento"],
+            ordem=dados_card["ordem"],
             id=dados_card["id"],
         )
 
@@ -234,11 +235,15 @@ def atualizar(cur, payload):
     else:
         ativo = 1 if atual["ativo"] else 0
     cartao = _cartao(payload.get("cartao")) if "cartao" in payload else (atual.get("cartao") or None)
+    if "dica" in payload:
+        dica = " ".join(str(payload.get("dica") or "").split())[:160]
+    else:
+        dica = atual.get("dica") or ""
     cur.execute(
         """
         UPDATE CARDS
         SET LABEL = :label, CATEGORIA = :categoria, VENCIMENTO = :vencimento,
-            ENTRA_PADRAO = :entra, ATIVO = :ativo, CARTAO = :cartao
+            ENTRA_PADRAO = :entra, ATIVO = :ativo, CARTAO = :cartao, DICA = :dica
         WHERE ID = :id
         """,
         label=label,
@@ -247,6 +252,7 @@ def atualizar(cur, payload):
         entra=entra,
         ativo=ativo,
         cartao=cartao,
+        dica=dica or None,
         id=identificador,
     )
 

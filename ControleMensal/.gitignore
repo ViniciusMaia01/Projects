@@ -3,3 +3,4 @@ dados/conexao.json
 dados/postgres.json
 dados/usuario-inicial.json
 dados/conexoes-dbeaver.md
+dados/logins.md

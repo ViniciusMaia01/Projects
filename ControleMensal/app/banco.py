@@ -16,7 +16,7 @@ from app.config import (
 )
 from app.erros import ErroValidacao
 from app.esquema import garantir as garantir_esquema
-from app.planilha import dinheiro, ler_planilha
+from app.planilha import avaliar_resumo, dinheiro, ler_planilha
 
 pool = None
 _estado = contextvars.ContextVar("cards_usuario", default=None)
@@ -139,26 +139,75 @@ _LINHAS_TOTAL = (
 _CATEGORIAS_CONHECIDAS = {item[0] for item in CATEGORIAS} | {"emprestimos"}
 
 
+def _linhas_da_formula(spec):
+    if not spec:
+        return None
+    if spec.get("tipo") == "soma":
+        linhas = {int(numero) for numero in spec.get("linhas") or []}
+        if 20 not in linhas:
+            linhas.add(20)
+        return linhas
+    if spec.get("tipo") == "expr":
+        return {
+            int(termo["linha"])
+            for termo in spec.get("termos") or []
+            if "linha" in termo and int(termo.get("sinal") or 1) > 0
+        }
+    return None
+
+
+def _na_fatura(card):
+    return bool(card.get("cartao")) and card.get("categoria") != "cartoes"
+
+
+def _embutido_na_fatura(card):
+    """Assinatura da planilha já entra no número da fatura do cartão."""
+    return _na_fatura(card) and card.get("categoria") == "assinaturas" and card.get("sistema")
+
+
+def _linhas_ja_na_fatura(cards=None):
+    origem = cards if cards is not None else _cards()
+    linhas = set()
+    for card in origem:
+        if not _na_fatura(card):
+            continue
+        linha = LINHA_POR_ID.get(card["id"])
+        if linha:
+            linhas.add(linha)
+    return linhas
+
+
+def _valores_na_fatura(valores, cards=None):
+    """Itens ligados à fatura saem da própria linha. Os que ainda não estão no cartão somam nele."""
+    origem = cards if cards is not None else _cards()
+    ajustados = {chave: dinheiro(valor) for chave, valor in (valores or {}).items()}
+    for card in origem:
+        if not _na_fatura(card):
+            continue
+        if _embutido_na_fatura(card):
+            ajustados[card["id"]] = Decimal("0.00")
+            continue
+        destino = card["cartao"]
+        ajustados[destino] = dinheiro(ajustados.get(destino, 0)) + dinheiro(ajustados.get(card["id"], 0))
+        ajustados[card["id"]] = Decimal("0.00")
+    return ajustados
+
+
 def contas_do_mes(valores, salario, pagos, cards, acrescimos=None, entra=None):
     """Total a pagar sai do salário.
 
     Entram Das, Max, Oliveira, Gabriel, Pessoa, Variáveis, Internet,
     as faturas, Empréstimo Nu, Gasolina e Investimento. Os dois
-    empréstimos não entram de novo: já estão em Oliveira. Assinatura
-    ligada a um cartão soma na fatura, junto com o valor digitado nela
-    e com os acréscimos lançados nessa fatura.
+    empréstimos não entram de novo: já estão em Oliveira. Acréscimos
+    lançados na fatura somam nela. Item ligado a um cartão entra uma
+    vez, na fatura. Assinatura da planilha já está dentro desse número.
     """
     marcados = set(pagos or [])
     acrescimos = acrescimos or {}
+    valores = _valores_na_fatura(valores, cards)
     ativos = [card for card in cards if card.get("ativo", True)]
     por_id = {card["id"]: card for card in ativos}
     todos = {card["id"]: card for card in cards}
-    extras = {}
-    for card in ativos:
-        if card.get("categoria") != "assinaturas" or not card.get("cartao"):
-            continue
-        codigo = card["cartao"]
-        extras[codigo] = extras.get(codigo, Decimal("0.00")) + dinheiro(valores.get(card["id"], 0))
     total = Decimal("0.00")
     pago = Decimal("0.00")
 
@@ -170,27 +219,23 @@ def contas_do_mes(valores, salario, pagos, cards, acrescimos=None, entra=None):
 
     for item in _LINHAS_TOTAL:
         card = todos.get(item)
-        if not card or (card.get("categoria") == "assinaturas" and card.get("cartao")):
+        if not card or _na_fatura(card):
             continue
         somar(item, dinheiro(valores.get(item, 0)))
     for card in ativos:
         if card.get("categoria") != "cartoes":
             continue
-        valor = (
-            dinheiro(valores.get(card["id"], 0))
-            + extras.get(card["id"], Decimal("0.00"))
-            + dinheiro(acrescimos.get(card["id"], 0))
-        )
+        valor = dinheiro(valores.get(card["id"], 0)) + dinheiro(acrescimos.get(card["id"], 0))
         somar(card["id"], valor)
     for card in ativos:
         if card.get("categoria") not in ("pessoas", "variaveis", "custo_fixo", "taxas"):
             continue
-        if card["id"] in _LINHAS_TOTAL:
+        if card["id"] in _LINHAS_TOTAL or _na_fatura(card):
             continue
         somar(card["id"], dinheiro(valores.get(card["id"], 0)))
     incluidos = set(entra) if entra is not None else None
     for card in ativos:
-        if card.get("categoria") in _CATEGORIAS_CONHECIDAS or card["id"] in _LINHAS_TOTAL:
+        if card.get("categoria") in _CATEGORIAS_CONHECIDAS or card["id"] in _LINHAS_TOTAL or _na_fatura(card):
             continue
         if incluidos is not None and card["id"] not in incluidos:
             continue
@@ -202,6 +247,25 @@ def contas_do_mes(valores, salario, pagos, cards, acrescimos=None, entra=None):
 
 
 def _calculados(valores, salario, entra, pagos, formulas=None, acrescimos=None):
+    spec = (formulas or {}).get("total") or {}
+    if spec.get("tipo") in ("soma", "expr"):
+        ja_na_fatura = _linhas_ja_na_fatura()
+        valores_fatura = _valores_na_fatura(valores)
+        total, _, _, _ = avaliar_resumo(formulas, salario, valores_fatura, ja_na_fatura)
+        linhas = (_linhas_da_formula(spec) or set()) - ja_na_fatura
+        marcados = set(pagos or [])
+        pago = Decimal("0.00")
+        for campo in CAMPOS:
+            if campo["excel"] in linhas and campo["id"] in marcados:
+                pago += dinheiro(valores_fatura.get(campo["id"], 0))
+        for card_id, extra in (acrescimos or {}).items():
+            total += dinheiro(extra)
+            if card_id in marcados:
+                pago += dinheiro(extra)
+        total = dinheiro(total)
+        pago = dinheiro(pago)
+        salario = dinheiro(salario)
+        return total, pago, dinheiro(total - pago), dinheiro(salario - total)
     return contas_do_mes(valores, salario, pagos, _cards(), acrescimos, entra)
 
 
@@ -651,6 +715,22 @@ def buscar_tudo():
     }
 
 
+def _acompanhar_fatura(pagos, antes, cards):
+    """Pagar ou reabrir a fatura acompanha as assinaturas ligadas a esse cartão."""
+    conjunto = set(pagos)
+    anterior = set(antes or [])
+    por_cartao = {}
+    for card in cards:
+        if _na_fatura(card):
+            por_cartao.setdefault(card["cartao"], []).append(card["id"])
+    for cartao, assinaturas in por_cartao.items():
+        if cartao in conjunto and cartao not in anterior:
+            conjunto.update(assinaturas)
+        elif cartao not in conjunto and cartao in anterior:
+            conjunto.difference_update(assinaturas)
+    return [item for item in conjunto if item in _ids_conhecidos()]
+
+
 def salvar_contabilidade(payload):
     mes = _exigir_mes(payload.get("mes"))
     with pool.acquire() as conn:
@@ -675,7 +755,11 @@ def salvar_contabilidade(payload):
         else:
             salario = atual["salario"]
         if "itens_pagos" in payload:
-            pagos = _ids(payload.get("itens_pagos"))
+            pagos = _acompanhar_fatura(
+                _ids(payload.get("itens_pagos")),
+                atual["pagos"] if atual else [],
+                _cards(),
+            )
         else:
             pagos = atual["pagos"] if atual else []
         if isinstance(payload.get("entra"), list):

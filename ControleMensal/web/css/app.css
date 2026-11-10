@@ -168,6 +168,15 @@ input.brl[readonly] { color: var(--blue); }
 .row.fora { box-shadow: inset 4px 0 0 var(--fora); background: #fff8ec; }
 .row.is-pago { background: var(--pago); }
 .row.atrasado { background: #fff1ee; }
+.row.cartao-bradesco, .nota.cartao-bradesco { border-left: 6px solid #c62828; background: #fdecec; }
+.row.cartao-nubank, .nota.cartao-nubank { border-left: 6px solid #7b2cbf; background: #f6eefe; }
+.row.cartao-mercado_pago, .nota.cartao-mercado_pago { border-left: 6px solid #e6b400; background: #fff8dc; }
+.row.cartao-bradesco .linha-nome label { color: #c62828; }
+.row.cartao-nubank .linha-nome label { color: #7b2cbf; }
+.row.cartao-mercado_pago .linha-nome label { color: #8a6a00; }
+.row.cartao-bradesco.is-pago,
+.row.cartao-nubank.is-pago,
+.row.cartao-mercado_pago.is-pago { background: var(--pago); }
 .pago-btn {
     border: 1px solid #d9c8b4; background: #fff; color: var(--muted);
     border-radius: 999px; min-height: 40px; padding: 8px 14px; font-size: 13px; font-weight: 650;
@@ -404,6 +413,15 @@ body.escuro {
 }
 body.escuro .row.fora { background: #3a2c14; }
 body.escuro .row.atrasado { background: #3a221e; }
+body.escuro .row.cartao-bradesco, body.escuro .nota.cartao-bradesco { background: #3d2426; }
+body.escuro .row.cartao-nubank, body.escuro .nota.cartao-nubank { background: #2e2438; }
+body.escuro .row.cartao-mercado_pago, body.escuro .nota.cartao-mercado_pago { background: #3a341c; }
+body.escuro .row.cartao-bradesco .linha-nome label { color: #ffc1c4; }
+body.escuro .row.cartao-nubank .linha-nome label { color: #e4c6ff; }
+body.escuro .row.cartao-mercado_pago .linha-nome label { color: #ffe08a; }
+body.escuro .row.cartao-bradesco.is-pago,
+body.escuro .row.cartao-nubank.is-pago,
+body.escuro .row.cartao-mercado_pago.is-pago { background: var(--pago); }
 body.escuro .pago-btn { background: #2d261f; color: var(--text); border-color: var(--line); }
 body.escuro .pago-btn.on { background: #1f6b45; color: #fff; border-color: #1f6b45; }
 body.escuro .btn.ghost, body.escuro .mini, body.escuro select, body.escuro .brl-wrap, body.escuro .form-linha input, body.escuro .form-linha select, body.escuro .conta-form input { background: #2d261f; }
@@ -534,14 +552,15 @@ body.escuro { --g-base: #2a3a4f; --g-base-borda: #3d5675; }
 .graf-base { margin: 0 0 10px; color: var(--muted); font-size: 13px; }
 .graf-dica .graf-dica-base { border-bottom: 1px solid var(--rowline); margin-bottom: 4px; padding-bottom: 4px; }
 .renomear-inline {
-    display: flex; align-items: center; gap: 6px; height: 34px; max-width: 300px; padding: 0 4px 0 10px;
+    display: flex; flex-wrap: wrap; align-items: center; gap: 6px; height: auto; max-width: 440px; padding: 6px 6px 6px 10px;
     background: var(--elev); border: 1px solid var(--line); border-radius: 10px;
 }
 .renomear-inline:focus-within { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(31, 107, 69, .12); }
 .renomear-inline input, .renomear-inline input:focus {
-    flex: 1; width: auto; min-width: 0; height: 100%; padding: 0; border: 0; border-radius: 0; background: transparent; box-shadow: none; outline: none;
+    flex: 1 1 150px; width: auto; min-width: 0; height: 28px; padding: 0 2px; border: 0; border-radius: 0; background: transparent; box-shadow: none; outline: none;
     color: var(--text); font: inherit; font-size: 14px; font-weight: 600;
 }
+.renomear-inline input[name="subtitulo"] { font-weight: 500; color: var(--muted); }
 .renomear-inline .mini { flex: none; padding: 3px 9px; font-size: 11px; }
 .mini.ok { background: var(--accent); border-color: var(--accent); color: #fff; }
 .mini.ok:hover { filter: brightness(1.08); }

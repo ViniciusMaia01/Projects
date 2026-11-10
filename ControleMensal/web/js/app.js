@@ -98,19 +98,11 @@ function linhaSalva() {
 function idsEntra(row) {
     return row.entra && row.entra.length ? row.entra : CAMPOS.filter(campo => !campo.no_total).map(campo => campo.id);
 }
-function formatarDetalhe(formula) {
-    if (!formula || /[^0-9.+-]/.test(formula)) return formula || "";
-    return formula.split("+").map(parte => {
-        const valor = Number(parte);
-        return Number.isFinite(valor) ? fmtBrl(valor) : parte;
-    }).join(" + ");
-}
 function prazoTexto(campo, pago, mes) {
     if (!campo.vencimento) return "";
     const dia = new Date().getDate();
-    if (!pago && mes === hojeYm() && dia > campo.vencimento) return { cls: "tag late", texto: `Atrasado · dia ${campo.vencimento}` };
-    if (!pago && mes === hojeYm()) return { cls: "tag due", texto: `Vence dia ${campo.vencimento}` };
-    return { cls: "tag", texto: `Dia ${campo.vencimento}` };
+    if (!pago && mes === hojeYm() && dia > campo.vencimento) return { cls: "tag late", texto: `Em atraso desde o dia ${campo.vencimento}` };
+    return { cls: "tag due", texto: `Cobrança no dia ${campo.vencimento}` };
 }
 function brlInput(id, valor, extra) {
     return `<div class="brl-wrap"><span>R$</span><input id="${id}" class="brl ${extra || ""}" inputmode="decimal" value="${fmtBrl(valor)}"></div>`;
@@ -257,15 +249,18 @@ function listaCartoes() {
     });
     return lista;
 }
-function naFatura(campo) {
-    return Boolean(campo && campo.categoria === "assinaturas" && campo.cartao);
+function embutidoNaFatura(campo) {
+    return Boolean(campo && campo.sistema && campo.categoria === "assinaturas" && campo.cartao);
 }
-function assinaturasDaFatura(cardId) {
-    return CAMPOS.filter(campo => campo.categoria === "assinaturas" && campo.cartao === cardId);
+function naFatura(campo) {
+    return Boolean(campo && campo.cartao && campo.categoria !== "cartoes");
 }
 function valorLinha(row, id) {
-    const campo = document.getElementById("c_" + id);
-    return campo ? num(campo.value) : num(row[id]);
+    if (view === "contabilidade") {
+        const campo = document.getElementById("c_" + id);
+        if (campo) return num(campo.value);
+    }
+    return num(row[id]);
 }
 function itensFatura(cardId, mes) {
     return (dados.observacoes || []).filter(nota => nota.mes === mes && nota.tipo === "fatura" && nota.apelido === cardId && num(nota.valor) > 0);
@@ -274,8 +269,49 @@ function acrescimoFatura(cardId, mes) {
     return round2(itensFatura(cardId, mes).reduce((acc, nota) => acc + num(nota.valor), 0));
 }
 function valorFatura(row, cardId) {
-    const extra = assinaturasDaFatura(cardId).reduce((acc, campo) => acc + valorLinha(row, campo.id), 0);
-    return round2(valorLinha(row, cardId) + extra + acrescimoFatura(cardId, row.mes));
+    const somar = CAMPOS.filter(campo => campo.cartao === cardId && campo.categoria !== "cartoes" && !embutidoNaFatura(campo))
+        .reduce((acc, campo) => acc + valorLinha(row, campo.id), 0);
+    return round2(valorLinha(row, cardId) + somar + acrescimoFatura(cardId, row.mes));
+}
+function linhasDaFormula(spec) {
+    if (!spec) return null;
+    if (spec.tipo === "soma") {
+        const linhas = new Set((spec.linhas || []).map(Number));
+        if (!linhas.has(20)) linhas.add(20);
+        return linhas;
+    }
+    if (spec.tipo === "expr") {
+        const linhas = new Set();
+        (spec.termos || []).forEach(termo => {
+            if (termo.linha != null && Number(termo.sinal || 1) > 0) linhas.add(Number(termo.linha));
+        });
+        return linhas;
+    }
+    return null;
+}
+function totalPelaFormula(row) {
+    const spec = (row.formulas || {}).total;
+    const linhas = linhasDaFormula(spec);
+    if (!linhas) return null;
+    const ctx = { 3: num(row.salario) };
+    CAMPOS.forEach(campo => {
+        if (campo.excel) ctx[Number(campo.excel)] = valorLinha(row, campo.id);
+    });
+    let total = avaliarSpec(spec, ctx);
+    if (spec.tipo === "soma" && !(spec.linhas || []).map(Number).includes(20)) total = round2(total + num(ctx[20]));
+    return { total, linhas };
+}
+function itensDoMes(row) {
+    const formula = totalPelaFormula(row);
+    if (!formula) return componentes(row);
+    const pagos = new Set(row.itens_pagos || []);
+    const itens = [];
+    CAMPOS.forEach(campo => {
+        if (!formula.linhas.has(Number(campo.excel)) || naFatura(campo)) return;
+        const valor = campo.categoria === "cartoes" ? valorFatura(row, campo.id) : valorLinha(row, campo.id);
+        itens.push({ id: campo.id, label: campo.label, valor, pago: pagos.has(campo.id) });
+    });
+    return itens;
 }
 function componentes(row) {
     const pagos = new Set(row.itens_pagos || []);
@@ -288,11 +324,11 @@ function componentes(row) {
     CAMPOS.filter(campo => campo.categoria === "cartoes").forEach(campo => {
         itens.push({ id: campo.id, label: campo.label, valor: valorFatura(row, campo.id), pago: pagos.has(campo.id) });
     });
-    CAMPOS.filter(campo => ["pessoas", "variaveis", "custo_fixo", "taxas"].includes(campo.categoria) && !LINHAS_TOTAL.includes(campo.id)).forEach(campo => {
+    CAMPOS.filter(campo => ["pessoas", "variaveis", "custo_fixo", "taxas"].includes(campo.categoria) && !LINHAS_TOTAL.includes(campo.id) && !naFatura(campo)).forEach(campo => {
         itens.push({ id: campo.id, label: campo.label, valor: valorLinha(row, campo.id), pago: pagos.has(campo.id) });
     });
     const incluidos = new Set(idsEntra(row));
-    CAMPOS.filter(campo => !CATEGORIAS_FIXAS.includes(campo.categoria) && !LINHAS_TOTAL.includes(campo.id) && incluidos.has(campo.id)).forEach(campo => {
+    CAMPOS.filter(campo => !CATEGORIAS_FIXAS.includes(campo.categoria) && !LINHAS_TOTAL.includes(campo.id) && incluidos.has(campo.id) && !naFatura(campo)).forEach(campo => {
         itens.push({ id: campo.id, label: campo.label, valor: valorLinha(row, campo.id), pago: pagos.has(campo.id) });
     });
     return itens;
@@ -303,7 +339,7 @@ function textoInvestimento(valor) {
     return money(numero);
 }
 function somas(row) {
-    const itens = componentes(row);
+    const itens = itensDoMes(row);
     const total = round2(itens.reduce((acc, item) => acc + item.valor, 0));
     const pago = round2(itens.filter(item => item.pago).reduce((acc, item) => acc + item.valor, 0));
     const salario = num(row.salario);
@@ -466,10 +502,7 @@ function renderContab() {
         else ligarBrl(input);
     });
     document.querySelectorAll("#viewContabilidade .pago-btn").forEach(botao => {
-        botao.addEventListener("click", () => {
-            alternarPago(botao);
-            lembrar();
-        });
+        botao.addEventListener("click", () => gravarPago(botao));
     });
     ligarAcoesLinha();
     document.querySelectorAll(".form-linha-card").forEach(form => form.addEventListener("submit", criarLinha));
@@ -505,7 +538,6 @@ function cardCategoria(grupo, row, entra, pagos) {
     const campos = CAMPOS.filter(campo => campo.categoria === grupo.id && !(soAbertos && pagos.has(campo.id)));
     const sempre = grupo.id === "taxas";
     const visiveis = campos.filter(campo => sempre || !campo.sistema || num(row[campo.id]) !== 0 || revelados.has(campo.id));
-    const escondidos = sempre ? [] : campos.filter(campo => !visiveis.includes(campo));
     const somaDentro = round2(campos.filter(campo => entra.has(campo.id)).reduce((acc, campo) => acc + num(row[campo.id]), 0));
     const somaFora = round2(campos.filter(campo => !entra.has(campo.id)).reduce((acc, campo) => acc + num(row[campo.id]), 0));
     const tudoFora = campos.length > 0 && campos.every(campo => !entra.has(campo.id));
@@ -520,7 +552,7 @@ function cardCategoria(grupo, row, entra, pagos) {
         <div class="card-body">
             ${visiveis.map(campo => linhaCampo(campo, row, entra, pagos)).join("")}
             ${subtotal}
-            ${formDoCard(grupo, escondidos)}
+            ${formDoCard(grupo)}
         </div>
         ${rodapeLancamento(grupo.id)}
     </section>`;
@@ -534,7 +566,7 @@ function campoZerado(categoria, nome) {
     const row = rascunho || linhaSalva();
     return CAMPOS.find(campo => campo.categoria === categoria && normalizarNome(campo.label) === alvo && num(row[campo.id]) === 0) || null;
 }
-function formDoCard(grupo, escondidos) {
+function formDoCard(grupo) {
     if (grupo.id === "cartoes") {
         const opcoes = listaCartoes().map(([id, nome]) => `<option value="${id}">${esc(nome)}</option>`).join("");
         return `<form class="form-linha form-linha-card" data-modo="fatura">
@@ -549,19 +581,13 @@ function formDoCard(grupo, escondidos) {
             </form>`;
     }
     const dia = grupo.id === "assinaturas"
-        ? `<label class="field"><span>Vence dia</span><input name="vencimento" inputmode="numeric" placeholder="opcional"></label>`
-        : "";
-    const cartao = grupo.id === "assinaturas"
-        ? `<label class="field"><span>Somar na fatura</span><select name="cartao">${opcoesCartao("")}</select></label>`
-        : "";
-    const lista = (escondidos || []).length
-        ? `<datalist id="dl_${grupo.id}">${escondidos.map(campo => `<option value="${esc(campo.label)}"></option>`).join("")}</datalist>`
+        ? `<label class="field"><span>Dia da cobrança</span><input name="vencimento" inputmode="numeric" placeholder="opcional"></label>`
         : "";
     return `<form class="form-linha form-linha-card">
-        <label class="field"><span>Nome</span><input name="label" required maxlength="60" placeholder="Nome" ${lista ? `list="dl_${grupo.id}"` : ""}>${lista}</label>
+        <label class="field"><span>Nome</span><input name="label" required maxlength="60" placeholder="Nome" autocomplete="off"></label>
         <label class="field"><span>Valor do mês</span><input name="valor" class="brl" inputmode="decimal" value="0,00"></label>
         ${dia}
-        ${cartao}
+        <label class="field"><span>Incluir na fatura</span><select name="cartao">${opcoesCartao("")}</select></label>
         <button class="btn" type="submit">Adicionar</button>
     </form>`;
 }
@@ -573,23 +599,23 @@ function linhaCampo(campo, row, entra, pagos) {
     const atrasado = prazo && prazo.cls.includes("late");
     const tags = [];
     if (fora) tags.push('<span class="tag out">Excluído do total</span>');
-    if (campo.categoria === "assinaturas") {
+    if (naFatura(campo)) {
         tags.push(tagCartao(campo.cartao) || '<span class="tag">Sem cartão</span>');
+        tags.push('<span class="tag">Incluída na fatura</span>');
     }
-    if (naFatura(campo)) tags.push('<span class="tag">Incluída na fatura</span>');
     if (campo.id === "oliveira" && row.oliveira_calculado) tags.push('<span class="tag calc">Calculado</span>');
     if (prazo) tags.push(`<span class="${prazo.cls}">${esc(prazo.texto)}</span>`);
-    const detalhe = formatarDetalhe((row.detalhes || {})[campo.id]);
-    const dica = [campo.dica, detalhe].filter(Boolean).join(" · ");
+    const dica = campo.dica || "";
     const bloqueado = campo.id === "oliveira" && row.oliveira_calculado ? "readonly" : "";
     const noTotal = entra.has(campo.id);
     const contaFatura = campo.categoria === "cartoes"
         ? itensFatura(campo.id, row.mes).map(nota => `<p class="fatura-item"><span>${esc(nota.texto)}</span><strong>${money(nota.valor)}</strong><button type="button" class="lixo-inline" title="Excluir" aria-label="Excluir ${esc(nota.texto)}" data-nota-x="${nota.id}">${ICONE_LIXEIRA}</button></p>`).join("")
         : "";
-    return `<div class="row ${fora ? "fora" : ""} ${ativo ? "is-pago" : ""} ${atrasado ? "atrasado" : ""}">
+    const corCartao = campo.categoria === "cartoes" ? ` cartao-${campo.id}` : "";
+    return `<div class="row${corCartao} ${fora ? "fora" : ""} ${ativo ? "is-pago" : ""} ${atrasado ? "atrasado" : ""}">
         <div class="linha-nome">
             <label>${esc(campo.label)}</label>
-            ${tags.length || dica ? `<div class="tags">${tags.join("")}${dica ? `<span>${esc(dica)}</span>` : ""}</div>` : ""}
+            ${tags.length || dica ? `<div class="tags">${tags.join("")}${dica ? `<span class="subtitulo">${esc(dica)}</span>` : ""}</div>` : ""}
             ${contaFatura}
         </div>
         ${pagoBtn(ativo, `data-campo="${campo.id}"`)}
@@ -601,7 +627,7 @@ function linhaCampo(campo, row, entra, pagos) {
                     ? `<span class="tag ok" title="Este valor compõe o total de despesas do mês.">Incluído no total</span>`
                     : `<button type="button" class="mini ${noTotal ? "on" : ""}" data-entra="${campo.id}">${noTotal ? "Incluído no total" : "Excluído do total"}</button>`}
             <button type="button" class="mini" data-renomear="${campo.id}">Renomear</button>
-            ${campo.categoria === "assinaturas" ? `<label class="mini-cartao">Somar na fatura<select data-cartao="${campo.id}">${opcoesCartao(campo.cartao)}</select></label>` : ""}
+            ${campo.categoria === "cartoes" ? "" : `<label class="mini-cartao">Incluir na fatura<select data-cartao="${campo.id}">${opcoesCartao(campo.cartao)}</select></label>`}
             <button type="button" class="mini icone-btn" title="${campo.sistema ? "Ocultar" : "Excluir"}" aria-label="${campo.sistema ? "Ocultar" : "Excluir"} ${esc(campo.label)}" ${campo.sistema ? `data-ocultar="${campo.id}"` : `data-excluir="${campo.id}"`}>${ICONE_LIXEIRA}</button>
         </div>
     </div>`;
@@ -646,8 +672,8 @@ function renderNovoCard() {
             <label class="field"><span>Categoria</span><select name="categoria">${opcoes}</select></label>
             <label class="field hidden" data-nova-categoria><span>Nome da categoria</span><input name="nova_categoria" maxlength="40" placeholder="Ex.: Educação"></label>
             <label class="field"><span>Valor do mês</span><input name="valor" class="brl" inputmode="decimal" value="0,00"></label>
-            <label class="field"><span>Vence dia</span><input name="vencimento" inputmode="numeric" placeholder="opcional"></label>
-            <label class="field"><span>Cartão</span><select name="cartao">${opcoesCartao("")}</select></label>
+            <label class="field"><span>Dia da cobrança</span><input name="vencimento" inputmode="numeric" placeholder="opcional"></label>
+            <label class="field"><span>Incluir na fatura</span><select name="cartao">${opcoesCartao("")}</select></label>
             <label class="check"><input type="checkbox" name="entra" checked> Incluir no total de despesas</label>
             <button class="btn" type="submit">Adicionar</button>
         </form>
@@ -731,7 +757,7 @@ function atualizarTotais() {
             <div>Total pago<strong class="pos">${money(conta.pago)}</strong></div>
             <div>Total pendente<strong class="${faltante > 0 ? "warn" : ""}">${money(faltante)}</strong></div>
             <div>Saldo do mês<strong class="${sobra >= 0 ? "pos" : "neg"}">${money(sobra)}</strong></div>
-            <p class="conta-regra">O total de despesas é o valor descontado do salário e o saldo é a diferença entre os dois. Itens vinculados a um cartão são somados na fatura.</p>`;
+            <p class="conta-regra">O total de despesas é o valor descontado do salário e o saldo é a diferença entre os dois. Assinatura que já está na fatura não entra de novo.</p>`;
     }
     CATEGORIAS.forEach(grupo => {
         const card = document.querySelector(`#viewContabilidade .card[data-cat="${grupo.id}"]`);
@@ -778,6 +804,75 @@ function ligarBrlForm(input) {
         atualizarRodapes();
     });
     input.addEventListener("input", atualizarRodapes);
+}
+function assinaturasDoCartao(cardId) {
+    return CAMPOS.filter(campo => naFatura(campo) && campo.cartao === cardId);
+}
+function valoresPendentes() {
+    const atual = coletarMes();
+    const salvo = linhaSalva();
+    const valores = {};
+    if (num(atual.salario) !== num(salvo.salario)) valores.salario = num(atual.salario);
+    CAMPOS.forEach(campo => {
+        if (num(atual[campo.id]) !== num(salvo[campo.id])) valores[campo.id] = num(atual[campo.id]);
+    });
+    return valores;
+}
+function reaplicarValores(valores) {
+    const chaves = Object.keys(valores);
+    if (!chaves.length) {
+        rascunho = null;
+        sujo = temPendente();
+        return;
+    }
+    const base = linhaSalva();
+    if (valores.salario != null) base.salario = num(valores.salario);
+    CAMPOS.forEach(campo => {
+        if (valores[campo.id] != null) base[campo.id] = num(valores[campo.id]);
+    });
+    rascunho = base;
+    sujo = true;
+}
+async function gravarPago(botao) {
+    if (botao.dataset.ocupado === "1") return;
+    const id = botao.dataset.campo;
+    const ativo = !botao.classList.contains("on");
+    const campo = CAMPOS.find(item => item.id === id);
+    const ligados = campo && campo.categoria === "cartoes" ? assinaturasDoCartao(id) : [];
+    alternarPago(botao);
+    ligados.forEach(assinatura => {
+        const outro = document.querySelector(`#viewContabilidade .pago-btn[data-campo="${assinatura.id}"]`);
+        if (outro && outro.classList.contains("on") !== ativo) alternarPago(outro);
+    });
+    lembrar();
+    const row = coletarMes();
+    const pagos = new Set(row.itens_pagos || []);
+    ligados.forEach(assinatura => {
+        if (ativo) pagos.add(assinatura.id);
+        else pagos.delete(assinatura.id);
+    });
+    const pendentes = valoresPendentes();
+    botao.dataset.ocupado = "1";
+    setStatus("load", "Salvando situação...");
+    try {
+        dados = await post("/api/contabilidade", { mes: row.mes, itens_pagos: [...pagos] });
+        CAMPOS = dados.campos || CAMPOS;
+        CATEGORIAS = dados.categorias || CATEGORIAS;
+        reaplicarValores(pendentes);
+        setStatus("ok", ativo ? "Marcado como pago" : "Marcado como pendente");
+        showBanner("");
+        render();
+    } catch (erro) {
+        setStatus("err", "Falha ao salvar");
+        showBanner(erro.message);
+        alternarPago(botao);
+        ligados.forEach(assinatura => {
+            const outro = document.querySelector(`#viewContabilidade .pago-btn[data-campo="${assinatura.id}"]`);
+            if (outro && outro.classList.contains("on") === ativo) alternarPago(outro);
+        });
+        lembrar();
+        delete botao.dataset.ocupado;
+    }
 }
 function alternarPago(botao) {
     const ativo = !botao.classList.contains("on");
@@ -1410,24 +1505,34 @@ async function renomearCampo(id) {
         linha.querySelector(".renomear-inline input").focus();
         return;
     }
+    const subtitulo = linha.querySelector(".subtitulo");
+    if (subtitulo) subtitulo.hidden = true;
     const form = document.createElement("form");
     form.className = "renomear-inline";
-    form.innerHTML = `<input name="nome" maxlength="60" value="${esc(campo.label)}" aria-label="Novo nome do card"><button type="submit" class="mini ok">Salvar</button><button type="button" class="mini" data-cancelar>Cancelar</button>`;
+    form.innerHTML = `<input name="nome" maxlength="60" value="${esc(campo.label)}" aria-label="Nome" placeholder="Nome"><input name="subtitulo" maxlength="160" value="${esc(campo.dica || "")}" aria-label="Subtítulo" placeholder="Subtítulo"><button type="submit" class="mini ok">Salvar</button><button type="button" class="mini" data-cancelar>Cancelar</button>`;
     alvo.replaceWith(form);
     const campoNome = form.elements.nome;
     campoNome.focus();
     campoNome.select();
-    const cancelar = () => form.replaceWith(alvo);
+    const cancelar = () => {
+        form.replaceWith(alvo);
+        if (subtitulo) subtitulo.hidden = false;
+    };
     form.querySelector("[data-cancelar]").addEventListener("click", cancelar);
-    campoNome.addEventListener("keydown", evento => { if (evento.key === "Escape") cancelar(); });
+    form.addEventListener("keydown", evento => { if (evento.key === "Escape") cancelar(); });
     form.addEventListener("submit", async evento => {
         evento.preventDefault();
         const nome = campoNome.value.trim();
-        if (!nome || nome === campo.label) {
+        const texto = form.elements.subtitulo.value.trim();
+        if (!nome) {
+            campoNome.focus();
+            return;
+        }
+        if (nome === campo.label && texto === (campo.dica || "")) {
             cancelar();
             return;
         }
-        await mudarCard(id, { label: nome });
+        await mudarCard(id, { label: nome, dica: texto });
     });
 }
 async function mudarCard(id, mudanças) {
@@ -1580,29 +1685,39 @@ async function excluirNota(id) {
     }
 }
 function pendentes(row) {
-    return componentes(row).filter(item => item.valor > 0 && !item.pago);
+    return itensDoMes(row).filter(item => item.valor > 0 && !item.pago);
+}
+function corDoItem(id) {
+    const campo = CAMPOS.find(item => item.id === id);
+    if (!campo) return "";
+    if (campo.categoria === "cartoes") return ` cartao-${campo.id}`;
+    if (naFatura(campo)) return ` cartao-${campo.cartao}`;
+    return "";
+}
+function comTotais(row) {
+    const conta = somas(row);
+    return { ...row, total_a_pagar: conta.total, valor_pago: conta.pago, valor_faltante: conta.faltante, sobra: conta.sobra };
 }
 function renderPainel() {
     const mes = mesAtual();
     const atual = (dados.contabilidade || []).find(item => item.mes === mes) || {};
-    const total = num(atual.total_a_pagar);
+    const conta = somas(atual);
     const pagos = new Set(listaPagos(atual));
-    const faltante = num(atual.valor_faltante);
-    const sobra = num(atual.sobra);
     const abertos = pendentes(atual);
-    const entra = new Set(atual.entra || []);
     pintarKpis([
-        ["Total de despesas", money(total), ""],
-        ["Total pago", money(atual.valor_pago), "pos"],
-        ["Pendente", money(faltante), faltante > 0 ? "warn" : ""],
-        ["Saldo do mês", money(sobra), sobra >= 0 ? "pos" : "neg"]
+        ["Total de despesas", money(conta.total), ""],
+        ["Total pago", money(conta.pago), "pos"],
+        ["Pendente", money(conta.faltante), conta.faltante > 0 ? "warn" : ""],
+        ["Saldo do mês", money(conta.sobra), conta.sobra >= 0 ? "pos" : "neg"]
     ]);
     colocarChip("");
-    const listaAberta = abertos.map(item => `<div class="nota"><div>${esc(item.label)}</div><strong>${money(item.valor)}</strong></div>`).join("");
-    const vencimentos = CAMPOS.filter(campo => campo.vencimento).map(campo => {
+    const listaAberta = abertos.map(item => `<div class="nota${corDoItem(item.id)}"><div>${esc(item.label)}</div><strong>${money(item.valor)}</strong></div>`).join("");
+    const cobrancas = CAMPOS.filter(campo => campo.vencimento).map(campo => {
         const pago = pagos.has(campo.id);
         const prazo = prazoTexto(campo, pago, mes);
-        return `<div class="nota"><div>${esc(campo.label)} <span class="${prazo ? prazo.cls : "tag"}">${esc(prazo ? prazo.texto : "Dia " + campo.vencimento)}</span></div><strong>${money(atual[campo.id])}</strong></div>`;
+        const naFaturaDoCartao = naFatura(campo);
+        const vinculo = naFaturaDoCartao ? `${tagCartao(campo.cartao)}<span class="tag">Já entra na fatura</span>` : "";
+        return `<div class="nota${corDoItem(campo.id)}"><div>${esc(campo.label)} <span class="${prazo ? prazo.cls : "tag"}">${esc(prazo ? prazo.texto : "Cobrança no dia " + campo.vencimento)}</span> ${vinculo}</div><strong>${money(atual[campo.id])}</strong></div>`;
     }).join("");
     document.getElementById("viewPainel").innerHTML = `
         <section class="hero">
@@ -1611,7 +1726,7 @@ function renderPainel() {
             <p>Valor principal de ${esc(mesFull(mes))}.</p>
         </section>
         <div id="graficoPainel"></div>
-        <section class="card cat cat-vencimentos"><div class="card-head"><h3>Vencimentos de ${esc(mesFull(mes))}</h3><button class="mini" id="abrirMes" type="button">Abrir lançamentos</button></div><div class="card-body">${vencimentos || "<p class=\"meta\">Nenhum card com dia de vencimento.</p>"}</div></section>
+        <section class="card cat cat-vencimentos"><div class="card-head"><h3>Cobranças de ${esc(mesFull(mes))}</h3><button class="mini" id="abrirMes" type="button">Abrir lançamentos</button></div><div class="card-body">${cobrancas || "<p class=\"meta\">Nenhum card com dia de cobrança.</p>"}<p class="conta-regra">O dia é o da cobrança. Assinatura ligada a um cartão já está na fatura e não entra de novo no total.</p></div></section>
         <p class="conta-regra">O total de despesas é o valor descontado do salário e o saldo é a diferença entre os dois.</p>
         <section class="card cat cat-pendente">
             <div class="card-head"><h3>Pendências do mês</h3><span class="meta">${abertos.length ? money(round2(abertos.reduce((acc, item) => acc + item.valor, 0))) : "Sem pendências"}</span></div>
@@ -1619,7 +1734,7 @@ function renderPainel() {
         </section>
         `;
     montarGrafico(document.getElementById("graficoPainel"), {
-        dados,
+        dados: { ...dados, contabilidade: (dados.contabilidade || []).map(comTotais) },
         campos: CAMPOS,
         categorias: CATEGORIAS,
         mes,
