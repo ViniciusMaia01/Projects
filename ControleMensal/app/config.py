@@ -49,7 +49,7 @@ CAMPOS = [
      "dica": "Soma das parcelas, com juros, dos empréstimos 1 e 2"},
     {"id": "gabriel", "coluna": "GABRIEL", "label": "Gabriel", "categoria": "pessoas", "excel": 7, "no_total": False},
     {"id": "aluguel", "coluna": "ALUGUEL", "label": "Pessoa", "categoria": "pessoas", "excel": 8, "no_total": False,
-     "dica": "Item sem descrição. Use Renomear para identificá-lo."},
+     "dica": "Item sem descrição. Use Editar para identificá-lo."},
     {"id": "variaveis", "coluna": "VARIAVEIS", "label": "Variáveis", "categoria": "variaveis", "excel": 9, "no_total": False},
     {"id": "internet", "coluna": "INTERNET", "label": "Internet", "categoria": "assinaturas", "excel": 10, "no_total": False},
     {"id": "netflix", "coluna": "NETFLIX", "label": "Netflix", "categoria": "assinaturas", "excel": 11, "no_total": True, "vencimento": 18},

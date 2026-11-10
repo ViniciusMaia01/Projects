@@ -31,14 +31,18 @@ def garantir_tabelas(cur):
         cur.execute(
             """
             UPDATE CARDS
-            SET CATEGORIA = :categoria, VENCIMENTO = :vencimento, ORDEM = :ordem
+            SET CATEGORIA = :categoria, ORDEM = :ordem
             WHERE ID = :id AND SISTEMA = 1
             """,
             categoria=dados_card["categoria"],
-            vencimento=dados_card["vencimento"],
             ordem=dados_card["ordem"],
             id=dados_card["id"],
         )
+    cur.execute(
+        "UPDATE CARDS SET DICA = :nova WHERE SISTEMA = 1 AND DICA = :antiga",
+        nova="Item sem descrição. Use Editar para identificá-lo.",
+        antiga="Item sem descrição. Use Renomear para identificá-lo.",
+    )
 
 
 def _selecionar_ids(cur):
@@ -136,6 +140,38 @@ def criar_categoria(cur, texto):
         ordem=ordem,
     )
     return identificador
+
+
+def _categoria_personalizada(cur, identificador):
+    atual = next((item for item in listar_categorias(cur) if item["id"] == identificador), None)
+    if not atual:
+        raise ErroValidacao("Somente categorias criadas por você podem ser alteradas.")
+    return atual
+
+
+def renomear_categoria(cur, identificador, texto):
+    _categoria_personalizada(cur, identificador)
+    label = " ".join(str(texto or "").split())
+    if len(label) < 2 or len(label) > 40:
+        raise ErroValidacao("O nome da categoria precisa ter entre 2 e 40 caracteres.")
+    nomes = {item[1].lower() for item in CATEGORIAS} | {
+        item["label"].lower() for item in listar_categorias(cur) if item["id"] != identificador
+    }
+    if label.lower() in nomes:
+        raise ErroValidacao("Já existe uma categoria com esse nome.")
+    cur.execute(
+        "UPDATE CATEGORIAS_USUARIO SET LABEL = :label WHERE ID = :id",
+        label=label,
+        id=identificador,
+    )
+
+
+def excluir_categoria(cur, identificador):
+    _categoria_personalizada(cur, identificador)
+    cur.execute("SELECT COUNT(*) FROM CARDS WHERE CATEGORIA = :id", id=identificador)
+    if int(cur.fetchone()[0]) > 0:
+        raise ErroValidacao("Exclua ou mova os itens desta categoria antes de removê-la.")
+    cur.execute("DELETE FROM CATEGORIAS_USUARIO WHERE ID = :id", id=identificador)
 
 
 def _exigir_categoria(cur, categoria):

@@ -1060,8 +1060,26 @@ def criar_card(payload):
 def atualizar_card(payload):
     def acao(cur):
         catalogo.atualizar(cur, payload)
-        if "ativo" in payload or "cartao" in payload:
+        if "ativo" in payload or "cartao" in payload or "categoria" in payload:
             _recalcular_meses(cur)
+
+    return _com_cards(acao)
+
+
+def atualizar_categoria(payload):
+    identificador = str(payload.get("id") or "")
+
+    def acao(cur):
+        catalogo.renomear_categoria(cur, identificador, payload.get("label"))
+
+    return _com_cards(acao)
+
+
+def excluir_categoria(payload):
+    identificador = str(payload.get("id") or "")
+
+    def acao(cur):
+        catalogo.excluir_categoria(cur, identificador)
 
     return _com_cards(acao)
 

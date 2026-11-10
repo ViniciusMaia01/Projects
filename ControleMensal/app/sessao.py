@@ -79,6 +79,7 @@ def entrar(login, senha):
         if not achado or not verificar_senha(str(senha), achado[3]):
             raise ErroValidacao("Usuário ou senha inválidos.")
         token = secrets.token_urlsafe(32)
+        cur.execute("DELETE FROM sessoes WHERE expira <= :agora", agora=_agora(), escopo=False)
         cur.execute(
             """
             INSERT INTO sessoes (token, usuario_id, expira)

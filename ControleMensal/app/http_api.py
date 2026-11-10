@@ -9,9 +9,11 @@ from urllib.parse import urlparse
 from app.banco import (
     ErroValidacao,
     atualizar_card,
+    atualizar_categoria,
     buscar_tudo,
     criar_card,
     excluir_card,
+    excluir_categoria,
     excluir_emprestimo,
     excluir_observacao,
     exportar_mes,
@@ -44,9 +46,6 @@ class Handler(SimpleHTTPRequestHandler):
         super().__init__(*args, directory=str(WEB_DIR), **kwargs)
 
     def end_headers(self):
-        self.send_header("Access-Control-Allow-Origin", "*")
-        self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
-        self.send_header("Access-Control-Allow-Headers", "Content-Type")
         self.send_header("Cache-Control", "no-store, no-cache, must-revalidate")
         super().end_headers()
 
@@ -159,6 +158,8 @@ class Handler(SimpleHTTPRequestHandler):
             "/api/emprestimos/lote": salvar_emprestimos_lote,
             "/api/cards": criar_card,
             "/api/cards/atualizar": atualizar_card,
+            "/api/categorias/atualizar": atualizar_categoria,
+            "/api/categorias/excluir": excluir_categoria,
             "/api/observacao": salvar_observacao,
         }
         try:
