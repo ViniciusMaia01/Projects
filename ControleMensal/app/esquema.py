@@ -73,21 +73,29 @@ def _criar_usuario_inicial(cur):
         escopo=False,
     )
     usuario_id = cur.fetchone()[0]
-    destino = Path(DADOS_DIR) / "usuario-inicial.json"
+    _guardar_acesso("master", "master@localhost", senha)
+    return usuario_id
+
+
+def _guardar_acesso(usuario, email, senha):
+    destino = Path(DADOS_DIR) / "acessos.json"
+    dados = {}
+    if destino.exists():
+        dados = json.loads(destino.read_text(encoding="utf-8"))
+    site = dados.setdefault("site", {})
+    site.setdefault("url", "http://localhost:8765")
+    contas = site.setdefault("contas", [])
+    for conta in contas:
+        if conta.get("usuario") == usuario:
+            conta["email"] = email
+            conta["senha"] = senha
+            break
+    else:
+        contas.insert(0, {"usuario": usuario, "email": email, "senha": senha})
     destino.write_text(
-        json.dumps(
-            {
-                "usuario": "master",
-                "email": "master@localhost",
-                "senha": senha,
-            },
-            ensure_ascii=False,
-            indent=2,
-        )
-        + "\n",
+        json.dumps(dados, ensure_ascii=False, indent=2) + "\n",
         encoding="utf-8",
     )
-    return usuario_id
 
 
 def _dono(cur, tabela, usuario_id):

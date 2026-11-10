@@ -10,14 +10,18 @@ PORT = 8765
 
 
 def _postgres():
-    arquivo = DADOS_DIR / "postgres.json"
+    acessos = DADOS_DIR / "acessos.json"
+    legado = DADOS_DIR / "postgres.json"
     dados = {}
-    if arquivo.exists():
-        dados = json.loads(arquivo.read_text(encoding="utf-8"))
+    if acessos.exists():
+        bruto = json.loads(acessos.read_text(encoding="utf-8"))
+        dados = bruto.get("postgresql") or bruto.get("postgres") or {}
+    elif legado.exists():
+        dados = json.loads(legado.read_text(encoding="utf-8"))
     senha = os.environ.get("CONTROLE_PG_PASSWORD") or dados.get("senha") or ""
     if not senha:
         raise RuntimeError(
-            "Defina a senha do PostgreSQL em dados/postgres.json ou na variável CONTROLE_PG_PASSWORD."
+            "Defina a senha do PostgreSQL em dados/acessos.json ou na variável CONTROLE_PG_PASSWORD."
         )
     return (
         os.environ.get("CONTROLE_PG_HOST") or dados.get("host") or "localhost",

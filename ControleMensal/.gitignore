@@ -1,4 +1,5 @@
 __pycache__/
+dados/acessos.json
 dados/conexao.json
 dados/postgres.json
 dados/usuario-inicial.json
